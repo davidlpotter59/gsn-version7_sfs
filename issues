@@ -1,0 +1,24 @@
+cli /software/shells/aggregate_limit_loc.mk
+cli mv aggregate_limit_loc.idx /data/gsn
+cli mv aggregate_limit_loc.dat /data/gsn
+cli rm aggregate_date_loc.cq
+cli rm aggregate_date_loc.cqe
+
+cli rm aggregate_date_loc.sh
+run aggregate_date_loc
+rreplace aggregate_date_loc
+cli mv aggregate_date_loc.cq aggregate_date_loc.sh
+cli chmod 700 aggregate_date_loc.sh
+cli ./aggregate_date_loc.sh
+run/param=aggregate_date_loc gsn_aggregate_limit_loc
+
+view
+
+
+1.	809000136 – location 1-1 is missing the second line of contents of $28,410.  There is a second line of coding “Rate Type 2 – contents”.  The total contents limit should be $89,131
+2.	500002460 – location 1 contents is showing $88,510 should be $25,000.  
+          Location 2 contents is missing $25,000. 
+                                          Location 3 contents is showing $75,000 should be $25,000
+                                       **there was an endorsement processed on 3/18/19 effective 3/24/19 that made these changes
+3.	809000109 – location 1-1 is missing the second line of contents of $20,000. There is a second line of coding “Rate Type 2 – contents”. The total contents limit should be $258,000
+4.	800000660 – location 6-2 is missing $25,000 building
