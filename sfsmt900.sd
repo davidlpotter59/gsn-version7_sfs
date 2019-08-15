@@ -1,0 +1,624 @@
+%%
+Screen
+        Name = "sfsmt900" ;
+        Type = "detail" ;
+        Padcharacter = Space ;
+        Highlight = Underscore ;
+        Screensize = "dynamic" ;
+        Windowtitle = "%a     %s Printing Control File - Ver. 7.00      %m";
+        Domain = "scipscontrol" ;
+--        resizeable = yes ;
+        iconline = 0 ;
+
+        Global String                G_COMPANY_ID[10] ;
+        Global Unsigned Ascii Number G_STATE[2] ;
+        Global String                G_LOB_CODE[10] ;
+
+        local array[40] of unsigned ascii number l_view[1] ;
+
+
+        local string l_continue_1[3] ,
+                     l_company_id[10] ;
+
+        Include "stdkeys7.inc"
+
+Style Definition
+
+        Include "styles.inc"
+
+Functions
+
+        add/reuse   tagged add_fn ;
+
+        Include "stdfunc7.inc"
+
+Menu Definition
+
+        Include "stdmenu7.inc"
+
+}
+
+Toolbar Definition
+
+        Include "stdtoolbar7.inc"
+}
+
+screen entry
+l_company_id = ""
+
+access validation
+  G_company_id = scipscontrol:company_id
+  g_state      = scipscontrol:state
+  g_lob_code   = scipscontrol:lob_code
+  postevent("SFSMT900L","reload")
+  postevent("SFSMT900m","reload")
+
+
+screen at 2,1 to 35, 120
+Properties
+        {
+        LayoutType = Column
+        }
+{
+Panel Tagged Header_pl
+Properties
+        {
+        Borderstyle     = Raised
+        ScrollBarPolicy = asneeded
+        }
+{
+%%
+                                                        _______________
+*--------------------------------------------------------------------------------------------------------*
+| Company ID: __________  ____________________________________________________                           |
+| State Code: __ ______________________________________________________                                  |
+| Lob Code:   __________                                                                                 |
+*--------------------------------------------------------------------------------------------------------*
+
+%%
+
+Components
+
+Fields
+        FUNCTION/noecho/showasguidetext;
+301     SCIPSCONTROL:COMPANY_ID                 Mandatory
+        Include "companyhlp.inc"
+302     SFSCOMPANY:NAME[1] /mask="X(40)";
+401     SCIPSCONTROL:STATE                      Mandatory
+        Include "statehlp.inc"
+402     SFSSTATE:DESCRIPTION;
+501     SCIPSCONTROL:LOB_CODE                   Mandatory;
+
+} -- end of screen panel
+
+carddialog GUI at 1,100
+Properties
+        {
+        layoutconstraints = stretch
+        }
+{
+Panel  tagged dec_page_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Declaration Page"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| Use Batch Dec Page:           _  Paper Tray For Orignal Dec Page: __         |
+| Print Borders On Dec Page:    _  Paper Tray For Other Dec Pages:  __         |
+| Print Money Security Wording: _  Default Paper Tray:              __         |
+| Bop Forms Check Box:          _  Display Credits On Dec Page:     _          |
+| Use Producer Label:           _  Blank Wording:                   __________ |
+| Dec Page To Use:              ____________________                           |
+| Supplemental to Use:          ____________________                           |
+| Agent Label:                  _________________________                      |
+| Primary Seasonal Wording:     _________________________                      |
+| Secondary Seasonal Wording:   _________________________                      |
+| Surcharge Wording:            ______________________________                 |
+| Reinsurance On Dec:           _ ______________________________               |
+| Section1 Coverage C:          ___________________________________            |
+| Section2 Coverage E:          ___________________________________            |
+| Cancellation Definition:      ___________________________________            |
+| Cancellation Definition 1:    ___________________________________            |
+| Endorsement Definition:       ___________________________________            |
+| Endorsement Definition 1:     ___________________________________            |
+| Breakout PLIGA for End/CX:      _           Legacy System Switch: _          |
+| Dont Print Payor Code All Copy: _ ____________________                       |
+| Show Coverages:                 _  Special Contractors Diffrent Wording: _   |
+| Premium Wording:                __________________________________________   |
+| Commas Between Endorsements:    _  Workers Comp State Wording:  __________   |
+| Dont Print Total Estimated Premium: _ Dont Print Total Policy Premium:   _   |
+| Use sfsmort Dec Option: _    Use sfsprinter to Selection Printer Trays:  _   |
+| Static Forms Directory Location: ___________________________________         |
+| Policy Fee Wording: ______________________________                           |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+201     SCIPSCONTROL:USE_BATCH_DEC_PAGE/checkbox/values="0,1";
+202     SCIPSCONTROL:PAPER_TRAY[1];
+301     SCIPSCONTROL:PRINT_BORDERS_ON_DEC_PAGE/checkbox/values="0,1";
+302     SCIPSCONTROL:PAPER_TRAY[2];
+401     SCIPSCONTROL:PRINT_MONEY_SECURITY_WORDING/checkbox/values="0,1";
+402     SCIPSCONTROL:PAPER_TRAY[3];
+501     SCIPSCONTROL:BOP_FORMS_CHECK_BOX/checkbox/values="0,1";
+502     SCIPSCONTROL:DISPLAY_CREDITS_ON_DEC_PAGE/checkbox/values="0,1";
+601     SCIPSCONTROL:PRODUCER_LABEL/checkbox/values="0,1";
+602     SCIPSCONTROL:BLANK_WORDING;
+
+701     SCIPSCONTROL:DEC_PAGE_TO_USE;
+801     SCIPSCONTROL:BOP_SUPPLEMENTAL_TO_USE;
+901     SCIPSCONTROL:AGENT_LABEL;
+1001    SCIPSCONTROL:SEASONAL_WORDING[1];
+1101    SCIPSCONTROL:SEASONAL_WORDING[2];
+1201    SCIPSCONTROL:SURCHARGE_WORDING;
+1301    SCIPSCONTROL:FAC_REINSURANCE_ON_DEC/checkbox/values="0,1";
+1302    SCIPSCONTROL:FAC_REINSURANCE_WORD_ON_DEC;
+
+1401    SCIPSCONTROL:SECTION1_COVERAGE_C;
+1501    SCIPSCONTROL:SECTION2_COVERAGE_E;
+1601    SCIPSCONTROL:CANCELLATION_DEFINITION;
+1701    SCIPSCONTROL:CANCELLATION_DEFINITION_1;
+1801    scipscontrol:endorsement_definition ;
+1901    scipscontrol:endorsement_definition_1 ;
+
+2001    scipscontrol:breakout_pliga/checkbox/values="0,1" ;
+2002    scipscontrol:legacy_system_switch/checkbox/values="0,1" ;
+2101    SCIPSCONTROL:DONT_PRINT_PAYOR_CODE_ALL_COPY/checkbox/values="0,1";
+2102    SCIPSCONTROL:PAY_CODE_COPY_NAME;
+
+2201    SCIPSCONTROL:SHOW_COVERAGES/checkbox/values="0,1";
+2202    SCIPSCONTROL:SC_DIFFERENT_WORDING/checkbox/values="0,1";
+2301    SCIPSCONTROL:PREMIUM_WORDING;
+2401    scipscontrol:commas_between_endorsements/checkbox/values="0,1" ;
+2402    scipscontrol:wc_state_wording/uppercase ;
+2501    scipscontrol:dont_print_total_estimated/checkbox/values="0,1" ;
+2502    scipscontrol:dont_print_total_policy_premium/checkbox/values="0,1" ;
+2601    scipscontrol:use_sfsmort_dec_option/checkbox/values="0,1" ;
+2602    scipscontrol:USE_SFSPRINTER_FOR_TRAY_SELECT/checkbox/values="0,1";
+2701    scipscontrol:STATIC_FORM_DIR_LOCATION;
+2801    scipscontrol:policy_fee_wording;
+
+}
+
+Panel  tagged header_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Header"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| Incorporated:                                                                |
+| ___________________________________________________________________________  |
+| Logo:                                                                        |
+| ___________________________________________________________________________  |
+| Font To Use For Name:           _________________________                    |
+| Company Name[1]      H Position _____ Company Name[1]      V Position _____  |
+| Company Name[2]      H Position _____ Company Name[2]      V Position _____  |
+| Company Name[3]      H Position _____ Company Name[3]      V Position _____  |
+| Font To Use For Address:        _________________________                    |
+| Company Address[1]   H Position _____ Company Address[1]   V Position _____  |
+| Company Address[2]   H Position _____ Company Address[2]   V Position _____  |
+| Company Address[3]   H Position _____ Company Address[3]   V Position _____  |
+|~Company CityStateZip~H Position~_____~Company CityStateZip~V~Position~_____~~|
+| Font To Use For Logo:           _________________________                    |
+| Company Logo         H Position _____ Company Logo         V Position _____  |
+| Font To Use For Incorporated:   _________________________                    |
+| Company Incorporated H Position _____ Company Incorporated V Position _____  |
+| Font To Use For Declaration:    _________________________                    |
+| Policy Declaration   H Position _____ Policy Declaration   V Position _____  |
+| Font To Use For Telephone:      _________________________                    |
+| Company Telephone    H Position _____ Company Telephone    V Position _____  |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+fields
+301     SCIPSCONTROL:INCORPORATED;
+501     SCIPSCONTROL:LOGO;
+601     SCIPSCONTROL:FONT_TO_USE_1[1]
+        Include "scfonthlp.inc";
+701     SCIPSCONTROL:HORIZONTAL_POSITION[1];
+702     SCIPSCONTROL:VERITICAL_POSITION[1];
+801     SCIPSCONTROL:HORIZONTAL_POSITION[2];
+802     SCIPSCONTROL:VERITICAL_POSITION[2];
+901     SCIPSCONTROL:HORIZONTAL_POSITION[3];
+902     SCIPSCONTROL:VERITICAL_POSITION[3];
+1001    SCIPSCONTROL:FONT_TO_USE_1[2]
+        Include "scfonthlp.inc";
+1101    SCIPSCONTROL:HORIZONTAL_POSITION[4];
+1102    SCIPSCONTROL:VERITICAL_POSITION[4];
+1201    SCIPSCONTROL:HORIZONTAL_POSITION[5];
+1202    SCIPSCONTROL:VERITICAL_POSITION[5];
+1301    SCIPSCONTROL:HORIZONTAL_POSITION[6];
+1302    SCIPSCONTROL:VERITICAL_POSITION[6];
+1401    SCIPSCONTROL:HORIZONTAL_POSITION[7];
+1402    SCIPSCONTROL:VERITICAL_POSITION[7];
+1501    SCIPSCONTROL:FONT_TO_USE_1[3]
+        Include "scfonthlp.inc";
+1601    SCIPSCONTROL:HORIZONTAL_POSITION[8];
+1602    SCIPSCONTROL:VERITICAL_POSITION[8];
+1701    SCIPSCONTROL:FONT_TO_USE_1[4]
+        Include "scfonthlp.inc";
+1801    SCIPSCONTROL:HORIZONTAL_POSITION[9];
+1802    SCIPSCONTROL:VERITICAL_POSITION[9];
+1901    SCIPSCONTROL:FONT_TO_USE_1[5]
+        Include "scfonthlp.inc";
+2001    SCIPSCONTROL:HORIZONTAL_POSITION[10];
+2002    SCIPSCONTROL:VERITICAL_POSITION[10];
+2101    SCIPSCONTROL:FONT_TO_USE
+        Include "scfonthlp.inc";
+2201    SCIPSCONTROL:HORIZONTAL_POSITION_1;
+2202    SCIPSCONTROL:VERTICAL_POSITION_1;
+
+}
+
+Panel  tagged signatures_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Signatures"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| Countersignature Date:       _ Print Signature for CPP on Common only:  _    |
+| Use Signature 1:             _                                               |
+| Signature Horizontal Pos:    ____                                            |
+| Signature Vertical Pos:      ____                                            |
+| Signature Symbol Set:        __________                                      |
+| Signature String To Print:   _______________                                 |
+| Signature Definition:        ______________________________                  |
+*------------------------------------------------------------------------------*
+| Use Signature 2:             _                                               |
+| Signature Symbol Set 2:      __________                                      |
+| Signature String To Print 2: _______________                                 |
+| Signature Definition 2:      ______________________________                  |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+201     SCIPSCONTROL:COUNTERSIGNATURE_DATE/checkbox/values="0,1";
+202     SCIpscontrol:PRINT_SIGNATURE_ON_COMMON_ONLY/checkbox/values="0,1";
+301     SCIPSCONTROL:SIGNATURE/checkbox/values="0,1";
+401     SCIPSCONTROL:SIGNATURE_HOZ_POS;
+501     SCIPSCONTROL:SIGNATURE_VERT_POS;
+601     SCIPSCONTROL:SIGNATURE_SYMBOL_SET;
+701     SCIPSCONTROL:SIGNATURE_STRING_TO_PRINT;
+801     SCIPSCONTROL:SIGNATURE_DEFINITION;
+1001    SCIPSCONTROL:SIGNATURE_2/checkbox/values="0,1";
+1101    SCIPSCONTROL:SIGNATURE_SYMBOL_SET_2;
+1201    SCIPSCONTROL:SIGNATURE_STRING_TO_PRINT_2;
+1301    SCIPSCONTROL:SIGNATURE_DEFINITION_2;
+
+}
+
+Panel  tagged auto_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Auto/Workers Comp"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+|                             Commercial Auto                                  |
+*------------------------------------------------------------------------------*
+| Ca Blank A To H:                _                                            |
+| Ca Print Dollar Sign On Blank:  _                                            |
+| Ca ID Card Print Agent:         _                                            |
+| Ca ID Card Print Both Sides:    _                                            |
+| Ca Addl Insured Liability:      _                                            |
+| Ca ID Card To Use:              ____________________   ____________________  |
+| Ca ID Card Code:                ____________________                         |
+| Ca ID Company Code:             ____________________                         |
+| Ca Id Card Perforation Wording: ________________________________________     |
+| Ca Display Time After Date      _______________                              |
+*------------------------------------------------------------------------------*
+|                                Workers Comp                                  |
+*------------------------------------------------------------------------------*
+| Print Zeros in Policy No:       _                                            |
+| Dont Print Previous Totals:     _                                            |
+| Dont Print Unearned Premium:    _                                            |
+| Dont Print Interim Adjustment:  _                                            |
+| Dont Print Bureau File No:      _                                            |
+| Print Factors as 2 Decimals:    _                                            |
+| Use Codes on Dec Page:          _                                            |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+401     SCIPSCONTROL:CA_BLANK_A_TO_H/checkbox/values="0,1";
+501     SCIPSCONTROL:CA_PRINT_DOLLAR_SIGN_ON_BLANK/checkbox/values="0,1";
+601     SCIPSCONTROL:CA_ID_CARD_PRINT_AGENT/checkbox/values="0,1";
+701     SCIPSCONTROL:CA_ID_CARD_PRINT_BOTH_SIDES/checkbox/values="0,1";
+801     SCIPSCONTROL:CA_ADDL_INSURED_LIABILITY/checkbox/values="0,1";
+901     SCIPSCONTROL:CA_ID_CARD_TO_USE;
+902     SCIPSCONTROL:CA_ID_CARD_TO_USE2;
+1001    SCIPSCONTROL:AUTO_CODE;
+1101    SCIPSCONTROL:AUTO_COMPANY_CODE;
+1201    SCIPSCONTROL:ID_CARD_PERFORATION_WORDING;
+1301    scipscontrol:DISPLAY_TIME_OF_ID_CARDS;
+1701    scipscontrol:wc_print_zeros_policy_no/checkbox/values="0,1" ;
+1801    scipscontrol:wc_dont_print_previous_totals/checkbox/values="0,1" ;
+1901    scipscontrol:wc_dont_print_unearned_premium/checkbox/values="0,1" ;
+2001    scipscontrol:wc_dont_print_interim_adj/checkbox/values="0,1" ;
+2101    scipscontrol:wc_dont_print_bureau_file_no/checkbox/values="0,1" ;
+2201    scipscontrol:wc_print_factor_two_decimal/checkbox/values="0,1" ;
+2301    scipscontrol:use_wc_codes_on_dec/checkbox/values="0,1" ;
+
+}
+
+Panel  tagged misc_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Miscellaneous"
+        }
+{
+%%
+*-----------------------------------------------------------------------------------------------*
+| Duplex Short Edge:          _  Use New Print Program for Endorsements: _                      |
+| Use Batch For Endorsements: _  Don't Print TPD4 on New Business        _                      |
+| Print Privacy Notice:       _  Don't Print TPD7 on New Business        _                      |
+| Water Backup Wording:       _  Blanket Location Wording ____________________                  |
+| TPD5 Date Display:          _  Blanket MCP201 Wording:  ____________________                  |
+| Print Earthquake Form:      _  Agent Print Copy Name:   _______________                       |
+| Print DOI Questionnaire:    _  Agent Print All Copies:  _                                     |
+| Double Side Forms:          _  Change LOB wording on quote letters:    _                      |
+| Proxy To Print:             _______________   Automactic Renew Rounding Factor ____           |
+| Insured Mailer Page:        ____________________                                              |
+| Privacy Notice To Use:      ____________________  Included:  __________                       |
+| Seasonal Occupancy Wording: ______________________________                                    |
+*--------------------------------------------*--------------------------------------------------*
+| Quote / Worksheet Wording:                 | Policy Declaration Wording:                      |
+|                                            |                                                  |
+| Total Premium Wording:                     | Total Premium Wording:                           |
+| ___________________________________        | ___________________________________              |
+| Total Amount Due Wording:                  | Total Amount Due Wording:                        |
+| ___________________________________        | ___________________________________              |
+|                                            |                                                  |
+*--------------------------------------------*--------------------------------------------------*
+| Personal Umbrella Bordereaux      ______________ Maryland application Notice Date Change      |
+| Commercial Umberall Bordereaux    ______________                 __________                   |
+| Use Batch Cancel Form:            _        Dont Get Rid of LOB 14 on renewal: _               |
+| Cx Notice Wording On Back:        _ Blanket Wording Addtl ___________________________________ |
+| Fully Earned Policy Fee Wording:  _________________________                                   |
+| Inspection Fee Wording:           ____________________                                        |
+*-----------------------------------------------------------------------------------------------*
+| Print Invoices for Trans Code 12: _   Trans Code 13: _     Trans Code 15:  _                  |
+*-----------------------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+201     SCIPSCONTROL:DUPLEX_SHORT_EDGE/checkbox/values="0,1";
+202     SCIPSCONTROL:USE_NEW_PRINT_PROGRAM/checkbox/values="0,1";
+301     SCIPSCONTROL:USE_BATCH_FOR_ENDORSEMENTS/checkbox/values="0,1";
+302     SCIPSCONTROL:dont_print_tpd4_new_business/checkbox/values="0,1";
+401     SCIPSCONTROL:PRINT_PRIVACY_NOTICE/checkbox/values="0,1";
+402     SCIPSCONTROL:dont_print_tpd7_new_business/checkbox/values="0,1";
+501     SCIPSCONTROL:WATER_BACKUP_WORDING/checkbox/values="0,1";
+502     SCIPSCONTROL:blanket_location_WORDING;
+601     SCIPSCONTROL:TPD5_DATE_DISPLAY/checkbox/values="0,1";
+602     SCIPSCONTROL:blanket_mcp201_WORDING;
+701     SCIPSCONTROL:PRINT_EARTHQUAKE_FORM/checkbox/values="0,1";
+702     scipscontrol:agent_print_copy_name/uppercase ;
+801     SCIPSCONTROL:PRINT_DOI_QUESTIONNAIRE/checkbox/values="0,1";
+802     scipscontrol:agent_print_all_copies/checkbox/values="0,1" ;
+901     SCIPSCONTROL:DOUBLE_SIDE_FORMS/checkbox/values="0,1";
+902     scipscontrol:quotation_lob_wording_change/checkbox/values="0,1" ;
+1001    SCIPSCONTROL:PROXY_TO_PRINT;
+1002    SCIPSCONTROL:round_factor;
+1101    SCIPSCONTROL:INSURED_MAILER_PAGE;
+1201    SCIPSCONTROL:PRIVACY_NOTICE_TO_USE;
+1202    scipscontrol:included_wording ;
+1301    scipscontrol:seasonal_occupancy_wording ;
+1801    SCIPSCONTROL:total_premium_wording[1];
+1802    SCIPSCONTROL:total_premium_wording[2];
+2001    SCIPSCONTROL:total_amount_due_wording[1];
+2002    SCIPSCONTROL:total_amount_due_wording[2];
+2301    scipscontrol:PERSONAL_BORDEREAUX_REPORT_NAME ;
+2401    scipscontrol:COMMECIAL_BORDEREAUX_REPORT_NAME ;
+2402    scipscontrol:APPLICATION_NOTICE_CHANGE_DATE;
+2501    SCIPSCONTROL:USE_BATCH_CANCEL_FORM/checkbox/values="0,1";
+2502    SCIPSCONTROL:dont_REMOVE_LOB_14_ON_CONVERSION/checkbox/values="0,1";
+2601    SCIPSCONTROL:CX_NOTICE_WORDING_ON_BACK/checkbox/values="0,1";
+2602    SCIPSCONTROL:blanket_wording_additional ;
+2701    scipscontrol:fully_earned_policy_fee_wording;
+2801    scipscontrol:inspection_fee_wording;
+3001    scipscontrol:print_invoices_for_tc12/checkbox/values="0,1" ;
+3002    scipscontrol:print_invoices_for_tc13/checkbox/values="0,1" ;
+3003    scipscontrol:print_invoices_for_tc15/checkbox/values="0,1" ;
+
+}
+
+Panel  tagged losses_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Losses/Supplemental"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+|                                Losses/Reinsurance                            |
+*------------------------------------------------------------------------------*
+| Lae As Part Of Incurred:           _                                         |
+| Lae Paid:                          _                                         |
+| Lae Reserve:                       _                                         |
+| Monthly Pro Rata Unearned:         _                                         |
+| Display Ceded in Customer Service: _                                         |
+| Inflation Guard Form:              _______________                           |
+*------------------------------------------------------------------------------*
+|                                 Supplemental Forms                           |
+*------------------------------------------------------------------------------*
+| Print Revised On Supp:             _                                         |
+| Signs Attached To Building:        _                                         |
+| Signs Attached Deductible:         _                                         |
+| Signs Not Attached To Building:    _                                         |
+| Water Damage:                      _                                         |
+| Glass Square Feet:                 _                                         |
+| Valuable Papers Page No:           __                                        |
+| Print Payor Codes:                 _                                         |
+| Payor Codes Bottom of Page:        _   Eff Date: __________                  |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+401     SCIPSCONTROL:LAE_AS_PART_OF_INCURRED/checkbox/values="0,1";
+501     SCIPSCONTROL:LAE_PAID/checkbox/values="0,1";
+601     SCIPSCONTROL:LAE_RESERVE/checkbox/values="0,1";
+701     SCIPSCONTROL:MONTHLY_PRO_RATA_UNEARNED/checkbox/values="0,1";
+801     SCIPSCONTROL:DISPLAY_CEDED_CUSTOMER_SERVICE/checkbox /values ="0,1";
+901     SCIPSCONTROL:INFLATION_GUARD_FORM;
+
+1301    SCIPSCONTROL:PRINT_REVISED_ON_SUPP/checkbox/values="0,1";
+1401    SCIPSCONTROL:SIGNS_ATTACHED_TO_BUILDING/checkbox/values="0,1";
+1501    SCIPSCONTROL:SIGNS_ATTACHED_DEDUCTIBLE/checkbox/values="0,1";
+1601    SCIPSCONTROL:SIGNS_NOT_ATTACHED_TO_BUILDING/checkbox/values="0,1";
+1701    SCIPSCONTROL:WATER_DAMAGE/checkbox/values="0,1";
+1801    SCIPSCONTROL:GLASS_SQUARE_FEET/checkbox/values="0,1";
+1901    SCIPSCONTROL:VALUABLE_PAPERS_PAGE_NO;
+2001    SCIPSCONTROL:PAYOR_CODES/checkbox/values="0,1";
+2101    scipscontrol:payor_code_bottom_of_page/checkbox/values="0,1" ;
+2102    scipscontrol:payor_code_bottom_page_date ;
+
+}
+
+Panel  tagged cpp_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "CPP/SMP"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| CPP Dec To Use #1 ____________________                                       |
+| CPP Dec To Use #2 ____________________                                       |
+| CPP Dec To Use #3 ____________________                                       |
+| CPP Dec To Use #4 ____________________                                       |
+| CPP Dec To Use #5 ____________________                                       |
+| CPP Dec To Use #6 ____________________                                       |
+| CPP Dec To Use #7 ____________________                                       |
+*------------------------------------------------------------------------------*
+| CPP Heading Dec 1 ___________________________________________________        |
+| CPP Heading Dec 2 ___________________________________________________        |
+| CPP Heading Dec 3 ___________________________________________________        |
+| CPP Heading Dec 4 ___________________________________________________        |
+| CPP Heading Dec 5 ___________________________________________________        |
+| CPP Heading Dec 6 ___________________________________________________        |
+| CPP Heading Dec 7 ___________________________________________________        |
+*------------------------------------------------------------------------------*
+| Show~Account~Mod:~  _              Effective~Date:          __________       |
+| Dont~Print~Countersignature        Rate with Line of Business:    ____       |
+|   Common/Main:      _              Limit Name #1: ____________________       |
+|   Property:         _              Limit Name #2: ____________________       |
+|   Liability:        _              cpp heading exp date:    __________       |
+| Print~Exclusions:   _                                                        |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+201     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[1];
+301     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[2];
+401     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[3];
+501     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[4];
+601     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[5];
+701     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[6];
+801     SCIPSCONTROL:CPP_DEC_PAGE_TO_USE[7];
+
+1001    SCIPSCONTROL:CPP_HEADING[1];
+1101    SCIPSCONTROL:CPP_HEADING[2];
+1201    SCIPSCONTROL:CPP_HEADING[3];
+1301    SCIPSCONTROL:CPP_HEADING[4];
+1401    SCIPSCONTROL:CPP_HEADING[5];
+1501    SCIPSCONTROL:CPP_HEADING[6];
+1601    SCIPSCONTROL:CPP_HEADING[7];
+
+1801    scipscontrol:show_account_mod_in_totals/checkbox/values="0,1" ;
+1802    scipscontrol:show_account_mod_date ;
+1901    scipscontrol:rate_with_line_of_business/checkbox/values="0,1" ;
+2001    scipscontrol:dont_print_countersignature[1]/checkbox/values="0,1" ;
+2002    scipscontrol:limit_name[1];
+2101    scipscontrol:dont_print_countersignature[2]/checkbox/values="0,1" ;
+2102    scipscontrol:limit_name[2];
+2201    scipscontrol:dont_print_countersignature[3]/checkbox/values="0,1" ;
+2202    scipscontrol:cpp_heading_exp_date ;
+2301    scipscontrol:print_exclusions/checkbox/values="0,1" ;
+
+}
+
+
+Panel  tagged auto_renew_panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Scips Control 1"
+        }
+{
+%%
+
+%%
+
+components
+        subscreen at 1,1 to 34,100
+                        Properties
+                           {
+                             screen="sfsmt900l"
+                           }
+
+}
+
+Panel  tagged additional_wording
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Additional Wording"
+        }
+{
+
+%%
+
+%%
+
+components
+        subscreen at 1,1 to 28,121
+                        Properties
+                           {
+                             screen="sfsmt900m"
+                           }
+
+}
+
+
+
+} -- end card dialog
+
+} -- end
+
+End

@@ -1,0 +1,13 @@
+wcppols_address
+wcppols_anniversary
+wcppols_cx_reins
+wcppols_endorsement
+wcppols_exposure
+wcppols_header
+wcppols_name
+wcppols_other_states
+wcppols_pendingrate
+wcppols_state
+wcppols_sub
+wcppols_transmission
+wcppols_workplaces

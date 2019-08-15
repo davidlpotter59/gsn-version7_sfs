@@ -1,0 +1,239 @@
+%%
+Screen
+        Name = "sfsmt006" ;
+        Type = "Detail" ;
+        Padcharacter = Space ;
+        Highlite = Underscore ;
+        Screensize = "dynamic" ;
+        Windowtitle = "%a     %s Company Name and Address File - Ver. 7.00     %m"
+        Domain = "SFSCOMPANY" ;
+--        resizeable = yes ;
+        iconline = 0 ;
+
+        Include "stdkeys7.inc"
+
+Style Definition
+
+       Include "styles.inc"
+
+Functions
+
+        "I" Display "sfsmt010"  tagged other_mailing_fn ;
+
+        Include "stdfunc7.inc"
+
+Menu Definition
+
+        Include "stdmenu7.inc"
+        Menu Tagged utilities_mm Properties
+        {
+           Borderstyle = Raised
+           Text        = "File"
+        }
+        {
+        Menuitem Properties {
+                                            Iconname = "up.bmp"
+                                            Text     = "Other Mailing Address"
+                                            Shortcut = "F5"
+                                            }
+                  Events     {
+                                            Action   = other_mailing_fn
+                                            }
+        }
+       Separator
+
+} -- must have this here to allow for application specific includes to be
+  -- added above
+
+Toolbar Definition
+
+       Include "stdtoolbar7.inc"
+
+}
+screen at 2,1 to 35, 100
+Properties
+        {
+        LayoutType = Column
+        }
+{
+Panel Tagged Header_pl
+Properties
+        {
+        Borderstyle     = Raised
+        ScrollBarPolicy = asneeded
+        }
+{
+%%
+                                                        _______________
+*------------------------------------------------------------------------------*
+| Company Id:        __________                                                |
+| Name:              __________________________________________________        |
+|                    __________________________________________________        |
+|                    __________________________________________________        |
+| Address:           __________________________________________________        |
+|                    __________________________________________________        |
+|                    __________________________________________________        |
+| City/State/Zip:    ______________________________  ____   ___________        |
+*------------------------------------------------------------------------------*
+| Contact Name:      ________________________________________                  |
+| Telephone Number:  ________________   Fax Number:    ________________        |
+| Telephone Number:  ________________                                          |
+| Email Address:     __________________________________________________        |
+| Tax Id:            ____________                                              |
+| Naic Group Code:   ______             Naic Company Code:     ________        |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+        FUNCTION/noecho/showasguidetext ;
+301     SFSCOMPANY:COMPANY_ID                   Mandatory ;
+401     SFSCOMPANY:NAME[1]                         Mandatory;
+501     SFSCOMPANY:NAME[2];
+601     SFSCOMPANY:NAME[3];
+701     SFSCOMPANY:ADDRESS[1];
+801     SFSCOMPANY:ADDRESS[2];
+901     SFSCOMPANY:ADDRESS[3];
+1001    SFSCOMPANY:CITY;
+1002    SFSCOMPANY:STR_STATE/mask="XXXX";
+1003    SFSCOMPANY:ZIPCODE;
+1201    SFSCOMPANY:CONTACT[1];
+1301    SFSCOMPANY:TELEPHONE[1];
+1302    SFSCOMPANY:FAX;
+1401    sfscompany:telephone[2] ;
+1501    SFSCOMPANY:EMAIL;
+1601    SFSCOMPANY:TAX_ID;
+1701    SFSCOMPANY:NAIC_GROUP_CODE;
+1702    SFSCOMPANY:NAIC_COMPANY_CODE;
+
+}
+
+carddialog GUI at 1,1
+Properties
+        {
+        layoutconstraints = stretch
+        }
+{
+Panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "Control Setup"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| Allow String for Other Claim Number: _              Hide Credit Score:   _   |
+| Rating Bureau:     __________ Stat Company ID: ____ Stat Percent Manual: ___ |
+| Polname Update:           _   Suppname Update: _   Reinsurance Process:  _   |
+| Debug Mode:               _                Interface                 _       |
+| Generate Policy No:       _                Reverse Name Deliminator: _       |
+| Print Endorsements:       _                Special Umbrella Comm:    _       |
+| Prstrans Quote program:   ________         Policy Program:    ________       |
+| Agent Commission check:   _______________  Installment Include Rating: _     |
+| Return Premium Check:     _______________  Installment Include Prem:   _     |
+| Opt Coverage Screen BOP:  _                Premium Reinsurance:        _     |
+| Are you Farmers Union:    _                                                  |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+fields
+201     sfscompany:string_claim_no/checkbox/values="0,1" ;
+202     sfscompany:hide_credit_score/checkbox/values="0,1" ;
+301     SFSCOMPANY:RATING_BUREAU;
+302     SFSCOMPANY:STAT_COMPANY_ID;
+303     SFSCOMPANY:STAT_PERCENT_MSO;
+401     SFSCOMPANY:POLNAME_UPDATE/checkbox/values="0,1" ;
+402     SFSCOMPANY:SUPPNAME_UPDATE/checkbox/values="0,1" ;
+403     SFSCOMPANY:REINSURANCE /checkbox;
+501     SFSCOMPANY:DEBUG_MODE;
+502     SFSCOMPANY:TEXT /checkbox;
+601     SFSCOMPANY:GENERATE_POLICY_NO;
+602     SFSCOMPANY:REVERSE_NAME_DELIMINATOR;
+701     SFSCOMPANY:PRINT_ENDORSEMENTS
+        If SFSCOMPANY:PRINT_ENDORSEMENTS <> "Y" And
+           SFSCOMPANY:PRINT_ENDORSEMENTS <> "N" Then
+            Error 1211 ;
+1201    sfscompany:are_you_fumic/checkbox/values="0,1" ;
+702     sfscompany:umbrella_special_comm/checkbox/values="0,1" ;
+801     SFSCOMPANY:PRSTRANS_BATCH_PROGRAM[1];
+802     SFSCOMPANY:PRSTRANS_BATCH_PROGRAM[2];
+901     SFSCOMPANY:CHECKING_ACCOUNT_NO[1];
+902     SFSCOMPANY:INCLUDE_INSTALLMENT_RATING;
+1001    SFSCOMPANY:CHECKING_ACCOUNT_NO[2];
+1002    SFSCOMPANY:INCLUDE_INSTALLMENT_PREM;
+1101    sfscompany:optional_coverage_screen ;
+1102    sfscompany:premium_reins/checkbox/values="0,1" ;
+
+}
+
+Panel
+Properties
+        {
+        scrollbarpolicy = asneeded
+        text            = "More Control Setups"
+        }
+{
+%%
+*------------------------------------------------------------------------------*
+| Print on BOP Dec Class Code: _             Special Territory Rating:   _     |
+| Include All in IRPM:         _             Boiler Rating: __ No: __________  |
+| Use Other Mailing for Notices: _           Computer Rating:           __     |
+| Use in Activehelp: _                       Customer Property Rating:  __     |
+| Hired/Nonowned:    __                      Territory by Zipcode:      _      |
+| Use Company in Activehelp: _               Auto Schedule - Update at renewal |
+| Reportable Claim Processing: _             Schedule 1: _  2: _  3: _         |
+| Dont Check Receipts on UM:   _             Workers Comp NCCI #:    _____     |
+| Premium Reinsurance Debug Mode: _          Claims Reinsurance Debug Mde: _   |
+| Inland Marine Special Dec Wording: _   Use Other Claim Number for SCIPS: _   |
+| Property Rating:                   _       Loss Income Rating:           _   |
+| Special Audit:                     _       Loss Coverage:                _   |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+fields
+201     SFSCOMPANY:PRINT_INFO_ON_BOP_DEC/checkbox/values="0,1" ;
+202     SFSCOMPANY:SPECIAL_TERRITORY_RATING/checkbox/values="0,1" ;
+301     SFSCOMPANY:INCLUDE_ALL_IRPM/checkbox/values="0,1" ;
+302     SFSCOMPANY:BOILER_RATING;
+303     SFSCOMPANY:BOILER_COMPANY_NUMBER;
+401     SFSCOMPANY:USE_OTHER_MAILING/checkbox;
+402     SFSCOMPANY:COMPUTER_RATING;
+501     SFSCOMPANY:USE/checkbox/values="0,1";
+502     SFSCOMPANY:CUSTOMER_PROPERTY_RATING;
+601     SFSCOMPANY:HIRED_NONOWNED_RATING;
+602     SFSCOMPANY:TERRITORY_ZIPCODE/checkbox/values="0,1" ;
+701     SFSCOMPANY:USE/checkbox/values="0,1";
+801     SFSCOMPANY:REPORTABLE_CLAIM_PROCESSING/checkbox/values="0,1";
+802     SFSCOMPANY:IRPM_UPDATE_SCHEDULE[1]/checkbox/values="0,1";
+803     SFSCOMPANY:IRPM_UPDATE_SCHEDULE[2]/checkbox/values="0,1";
+804     SFSCOMPANY:IRPM_UPDATE_SCHEDULE[3]/checkbox/values="0,1";
+901     SFSCOMPANY:DONT_CHECK_RECEIPTS_ON_UM/checkbox/values="0,1" ;
+-- added these fields for LOB AUTO automatic renewals, flemington does not use
+-- in the deviation screen schedule for other they only use physical damage and
+-- liability, other companies use all three  added 3/13/2003 dp
+902     SFSCOMPANY:WORKERS_COMP_NCCI_NO ;
+1001    SFSCOMPANY:PRS_REINSURANCE_DEBUG/checkbox/values="0,1";
+1002    SFSCOMPANY:LRS_REINSURANCE_DEBUG /checkbox/values="0,1";
+1101    sfscompany:special_inland_dec_wording/checkbox/values="0,1" ;
+1102    sfscompany:other_system_claim_number/checkbox/values="0,1" ;
+1201    sfscompany:property_rating ;
+1202    sfscompany:loss_income_rating ;
+1301    sfscompany:special_audit_process/checkbox/values="0,1" ;
+1302    sfscompany:loss_coverage/checkbox/values="0,1" ;
+
+}
+
+}
+
+}
+
+End

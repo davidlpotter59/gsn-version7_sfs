@@ -1,0 +1,100 @@
+%%
+Screen
+        Name = "sfsmt005" ;
+        Type = "Detail" ;
+        Padcharacter = Space ;
+        Windowtitle = "%a     %s Reinsurance Company Name/Address - Ver. 7.00     %m" ;
+        Screensize = "dynamic" ;
+        Domain = "SFSREINSCO" ;
+--      resizeable = yes ;
+        iconline = 0 ;
+
+        Include "stdkeys7.inc"
+
+Style Definition
+
+        Include "styles.inc"
+
+Functions
+
+        add/reuse  tagged add_fn;
+
+        Include "stdfunc7.inc"
+
+Menu Definition
+
+        Include "stdmenu7.inc"
+
+}
+
+Toolbar Definition
+
+        Include "stdtoolbar7.inc"
+}
+
+screen
+{
+%%
+                                                       ____________
+*------------------------------------------------------------------------------*
+| Company Id:   __________ __________________________________________________  |
+| Reins Co:     ______     __________________________________________________  |
+|                          __________________________________________________  |
+|                          __________________________________________________  |
+*------------------------------------------------------------------------------*
+| Address: __________________________________________________                  |
+|          __________________________________________________                  |
+|          __________________________________________________                  |
+|          ______________________________ __ _________                         |
+| Contact: ________________________________________           ________________ |
+|          __________________________________________________ ________________ |
+|          ________________________________________           ________________ |
+|          __________________________________________________ ________________ |
+|          ________________________________________           ________________ |
+|          __________________________________________________ ________________ |
+*------------------------------------------------------------------------------*
+| Description: __________________________________________________              |
+|                                                                              |
+|                                                                              |
+*------------------------------------------------------------------------------*
+
+%%
+
+components
+
+Fields
+        FUNCTION/noecho/showasguidetext ;
+0301    SFSREINSCO:COMPANY_ID                   Mandatory
+        Error "Company not on File"
+        when SFSCOMPANY:NAME[1] = ""
+
+        Activehelp SFSCOMPANY:COMPANY_ID,
+                   SFSCOMPANY:NAME[1];
+0302    SFSCOMPANY:NAME[1]/displayonly ;
+0401    SFSREINSCO:REINS_CO                     Mandatory;
+0402    SFSREINSCO:NAME[1]                      Mandatory;
+0501    SFSREINSCO:NAME[2];
+0601    SFSREINSCO:NAME[3];
+0801    SFSREINSCO:ADDRESS[1];
+0901    SFSREINSCO:ADDRESS[2];
+1001    SFSREINSCO:ADDRESS[3];
+1101    SFSREINSCO:CITY;
+1102    SFSREINSCO:STR_STATE;
+1103    SFSREINSCO:STR_ZIPCODE;
+1201    SFSREINSCO:CONTACT[1];
+1202    SFSREINSCO:TELEPHONE[1];
+1301    SFSREINSCO:EMAIL[1];
+1302    SFSREINSCO:FAX[1];
+1401    SFSREINSCO:CONTACT[2];
+1402    SFSREINSCO:TELEPHONE[2];
+1501    SFSREINSCO:EMAIL[2];
+1502    SFSREINSCO:FAX[2];
+1601    SFSREINSCO:CONTACT[3];
+1602    SFSREINSCO:TELEPHONE[3];
+1701    SFSREINSCO:EMAIL[3];
+1702    SFSREINSCO:FAX[3];
+1901    SFSREINSCO:DESCRIPTION /freetextlines=3;
+
+}
+
+End

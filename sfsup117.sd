@@ -1,0 +1,1299 @@
+%%                       
+/*  sfsup117.sd
+
+    January 20, 2011
+
+    SCIPS.com
+
+    Policy Level information.  It will add records to AGGREGATE_LIMIT_POL.
+    both sfsline:lob_code = "SCP" "AUTO" "DWELLING" "HOME" , "BOP", "SMP".  will be
+    written to the file once.
+*/
+
+Program
+        Name = "sfsup117" ;
+        Type = "File" ;
+        Domain = "sfpmaster";
+        Padcharacter = Space ;
+
+        Number COUNTER = 1;
+
+        String L_COMPANY_ID[10]="",
+               L_STR_POLICY_NUMBER[20],
+               L_STR_OLD_POLICY_NUMBER[10],
+               L_LOCATION_1[2], -- string value of prem no
+               L_LOCATION_2[2], -- string value of building no
+               L_LOCATION_STR[4], -- concatenation of location_1 + location_2
+               L_SFS_CODE[3]="SFS";
+
+        Wdate G_STARTING_DATE,
+              G_ENDING_DATE;
+
+        Unsigned Ascii Number L_AGENT_NO[4]=0/decimals=0,
+                              L_LOCATION[3]=0/decimals=0, -- val of l_location
+                              l_most_current_end_sequence[4],
+                              L_COMMERCIAL_UNDERWRITER[2]=0/decimals=0;
+
+
+        Signed Ascii Number L_PREMIUM[8]=0/decimals=0,
+                            l_liability_premium[8]=0/decimals=0;
+
+        String L_ENTER[1];
+        String L_SFS[3]="SFS";
+        Unsigned Ascii Number L_PREM_NO[4]=0;
+        Unsigned Ascii Number L_BUILD_NO[4]=0;
+        Unsigned Ascii Number L_STATE[2];
+        Unsigned Ascii Number L_LIABILITY_CODE[2];
+        Unsigned Ascii Number L_LIABILITY_LIMIT[8];
+        Unsigned Ascii Number L_PROPERTY_PREMIUM[8];
+        Unsigned Ascii Number L_BUSINESS_INCOME[8];
+        unsigned ascii number l_cppinland_building_limit[10],
+                              l_cancelled;
+
+        Include "sfsrevname.var"
+
+Initialisation
+  Write ("<014>")  --clear screen
+  Access SFSDEFAULT, Set SFSDEFAULT:SFS_CODE = L_SFS_CODE
+  G_STARTING_DATE = Date(COMMANDLINE[1,8])
+  G_ENDING_DATE   = Date(COMMANDLINE[9,16])
+  Write ("%c%s%d",07020,"Starting Date   = ",G_STARTING_DATE)
+  Write ("%c%s%d",09020,"ending Date     = ",G_ENDING_DATE)
+
+Update
+/* TRANSACTED PRIOR TO START DATE WITH EFFECTIVE DATES WITHIN
+   THE START DATE and THE END DATE */
+
+   Access BOPGENERAL,
+      Set BOPGENERAL:POLICY_NO    = SFPMASTER:POLICY_NO,
+          BOPGENERAL:POL_YEAR     = SFPMASTER:POL_YEAR,
+          BOPGENERAL:END_SEQUENCE = SFPMASTER:END_SEQUENCE , Generic
+
+   Access SFPLOCATION,
+      Set SFPLOCATION:POLICY_NO   = SFPMASTER:POLICY_NO,
+          SFPLOCATION:POL_YEAR    = SFPMASTER:POL_YEAR,
+          SFPLOCATION:END_SEQUENCE= SFPMASTER:END_SEQUENCE,Generic
+
+   access sfpname,
+      set sfpname:policy_no    = SFPMASTER:POLICY_NO,
+          sfpname:pol_year     = SFPMASTER:POL_YEar,
+          sfpname:END_SEQUENCE = SFPMASTER:END_SEQUENCE, Generic
+
+   access sfsline,
+      set sfsline:company_ID       = sfpname:company_id,
+          sfsline:line_of_business = sfpname:line_of_business,
+          sfsline:lob_subline      = "00", exact
+
+   access sfsagent,
+      set sfsagent:company_id      = sfpname:company_id,
+          sfsagent:agent_no        = sfpname:agent_no, exact       --defaults to exact but used for documentation
+
+   access sfppoint,
+      set sfppoint:policy_no       = sfpname:policy_no,
+          sfppoint:pol_year        = sfpname:pol_year, exact
+
+   Access AGGREGATE_LIMIT_POL,
+      Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+
+   counter = counter + 1
+   l_company_id = sfpname:company_id
+
+   Write ("%c%s%n",15001,"Counter ......",COUNTER)
+
+--   do most_recent_endorsement_in_date_range
+
+   If (SFPMASTER:TRANS_DATE < G_STARTING_DATE And
+       SFPMASTER:TRANS_EFF >= G_STARTING_DATE And
+       SFPMASTER:TRANS_EFF <= G_ENDING_DATE) or
+      (SFPMASTER:TRANS_DATE >= G_STARTING_DATE And
+       SFPMASTER:TRANS_DATE <= G_ENDING_DATE And
+       SFPMASTER:TRANS_EFF  <= G_ENDING_DATE) and 
+       sfpmaster:trans_eff => 11.10.2018  then
+     {
+       if (sfpname:company_id one of "GGUND" and
+            sfpname:eff_date >= 11.10.2018) then 
+          -- (sfpname:company_id one of "DELOS" and
+          --  sfpname:eff_date < 09.01.2011)) then
+         {
+           if (SFSLINE:LOB_CODE One Of "BOP", "SCP", "PROPERTY", "LIABILITY", "SMP", "CINLAND", "FARMFIRE", "AUTO", "WORK","UMBRELLA" and
+              (sfpname:status not one of "NONRENEWED","CANCELLED", "LOSSES") or
+              (sfpname:status one of "NONRENEWED" and
+               sfpname:exp_date > g_ending_date)) and
+              ((sfppoint:converted one of "Y" or     --check to make sure the transaction was updated if not do not use it.
+               (sfppoint:converted one of "N" and
+                sfpmaster:end_sequence < sfppoint:end_sequence))) then
+             {
+               Write ("%c%s%n",03001,"policy_no     = ",sfpname:policy_no)
+               do check_current_status  --need to make sure that the current status(within the date range) is not cancelled
+               if l_cancelled not one of 1 then
+                 {
+                   switch (sfsline:lob_code)
+                     case "BOP"                       : do update_AGGREGATE_LIMIT_POL_file
+                     case "AUTO"                      : do UPDATE_AUTO_AGGREGATE_LIMIT_POL_FILE
+                     case "SCP"                       : do UPDATE_SCP_AGGREGATE_LIMIT_POL_FILE
+                     case "SMP"                       : do update_SMP_AGGREGATE_LIMIT_POL_file
+                     case "PROPERTY"                  : do update_SMP_AGGREGATE_LIMIT_POL_file
+                     case "FARMFIRE"                  : do update_FARM_AGGREGATE_LIMIT_POL_file
+                     case "LIABILITY"                 : do update_liability_AGGREGATE_LIMIT_POL_file
+                     case "WORK"                      : do update_work_AGGREGATE_LIMIT_POL_file
+                     case "CINLAND"                   : do update_cinland_AGGREGATE_LIMIT_POL_file
+                     case "UMBRELLA"                  : do update_umbrella_pol_file
+                   end
+                 }
+            }
+         }
+     }
+
+
+Screen Exit
+
+Write ("%c%s%n",15001,"Update is Compete......",COUNTER)
+
+Procedure Definition
+
+
+procedure most_recent_endorsement_in_date_range
+
+BEGIN
+  local file sfpmaster_most_current = alias for sfpmaster;
+  local unsigned ascii number l_sfppoint_end_sequence[4];
+  local unsigned ascii number l_found[1];
+
+  access sfppoint,
+     set sfppoint:policy_no       = sfpname:policy_no,
+         sfppoint:pol_year        = sfpname:pol_year, exact
+
+  if sfppoint:converted one of "N" then     --if endorsement is not updated I must not use it and get my new starting point which will be one less then it was.
+    {
+      if sfppoint:end_sequence > 0 then
+        {
+          l_sfppoint_end_sequence = sfppoint:end_sequence - 1          --the endorsment is not updated so do not use it.
+        }
+      else
+        {
+          l_sfppoint_end_sequence = sfppoint:end_sequence
+        }
+    }
+  else
+    {
+      l_sfppoint_end_sequence = sfppoint:end_sequence
+    }
+
+  access sfpmaster_MOST_CURRENT,
+     set sfpmaster_most_current:POLICY_NO    = sfppoint:policy_no,
+         sfpmaster_most_current:pol_year     = sfppoint:pol_year,
+         sfpmaster_most_current:end_sequence = l_sfppoint_end_sequence, exact
+
+  l_found = 0
+
+  while sfpmaster_most_current:POLICY_NO    = sfppoint:policy_no and
+        sfpmaster_most_current:pol_year     = sfppoint:pol_year and
+        sfpmaster_most_current:end_sequence = l_sfppoint_end_sequence
+    {
+      if (sfpmaster_MOST_CURRENT:TRANS_DATE  < G_STARTING_DATE And
+          sfpmaster_MOST_CURRENT:TRANS_EFF  >= G_STARTING_DATE And
+          sfpmaster_MOST_CURRENT:TRANS_EFF  <= G_ENDING_DATE) or
+         (sfpmaster_MOST_CURRENT:TRANS_DATE >= G_STARTING_DATE And
+          sfpmaster_MOST_CURRENT:TRANS_DATE <= G_ENDING_DATE And
+          sfpmaster_MOST_CURRENT:TRANS_EFF  <= G_ENDING_DATE) and
+          l_found = 0  then
+        {
+          l_most_current_end_sequence = sfppoint:end_sequence
+          l_found = 1
+        }
+      previous sfpmaster_MOST_CURRENT
+    }
+END
+
+Procedure check_current_status
+
+BEGIN
+  access sfpcurrent,
+     set sfpcurrent:policy_no = sfpname:policy_no, exact
+
+  access sfpname_alias,
+     set sfpname_alias:policy_no    = sfpcurrent:policy_no,
+         sfpname_alias:pol_year     = sfpcurrent:pol_year,
+         sfpname_alias:end_sequence = sfpcurrent:end_sequence, exact
+
+  Access sfpmaster_alias,
+     set sfpmaster_alias:policy_no    = sfpcurrent:policy_no,
+         sfpmaster_alias:pol_year     = sfpcurrent:pol_year,
+         sfpmaster_alias:end_sequence = sfpcurrent:end_sequence, exact
+
+  while sfpmaster_alias:trans_date >= g_starting_date and
+        sfpmaster_alias:trans_date > g_ending_date and
+        sfpmaster_alias:policy_no = sfpname:policy_no
+    {
+      previous sfpmaster_alias     --if the current status of the record is after the expiration date
+                                   --I will continue to process the record until I find the latest
+                                   --transaction that falls within the date range.
+    }
+
+  while sfpmaster_alias:trans_eff > G_ending_date and
+        sfpmaster_alias:trans_eff >= G_starting_date and
+        sfpmaster_alias:policy_no = sfpname:policy_no
+    {
+      previous sfpmaster_alias     --if the current status of the record is after the expiration date
+    }
+
+  access sfpname_alias,
+     set sfpname_alias:policy_no    = sfpmaster_alias:policy_no,
+         sfpname_alias:pol_year     = sfpmaster_alias:pol_year,
+         sfpname_alias:end_sequence = sfpmaster_alias:end_sequence
+
+  if (sfpname_alias:status = "CANCELLED" and
+      Sfpname_alias:trans_date <= g_ending_date) or
+     (sfpname_alias:status one of "NONRENEWED" and
+      sfpname_alias:exp_date <= g_ending_date) then
+    {
+      l_cancelled = 1
+    }
+  else
+    {
+      l_cancelled = 0
+    }
+END
+
+
+procedure update_umbrella_pol_file
+
+BEGIN
+  local unsigned ascii number l_umbrella_premium[8];
+  Access cppUMBRELLA,
+     Set cppUMBRELLA:policy_NO    = SFPMASTER:POLICY_NO,
+         cppumbrella:pol_year     = SFPMASTER:POL_YEAR,
+         cppumbrella:end_sequence = SFPMASTER:END_SEQUENCE, generic
+
+  L_COMPANY_ID = SFpname:COMPANY_ID
+
+  Access AGGREGATE_LIMIT_POL,
+     Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+  if sfpmaster:total[20] = 0 then
+    l_umbrella_premium = SFPMASTER:TOTAL[18]
+  else
+    l_umbrella_premium = SFPMASTER:TOTAL[20]
+
+  If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+    {
+      Add AGGREGATE_LIMIT_POL
+        Begin
+          AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+          AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+          AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+          AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+          AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+          AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+          AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = 0
+          AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+          AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppUMBRELLA:OCCURRENCE
+          AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = l_umbrella_premium
+          AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+          AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+          AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+          AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+          AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+          AGGREGATE_LIMIT_POL:agent_no                   = sfpname:agent_no
+          AGGREGATE_LIMIT_POL:county                     = 0
+          AGGREGATE_LIMIT_POL:square_footage             = 0
+          AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+          AGGREGATE_LIMIT_POL:tier                       = 0
+        End -- end of add
+    }
+  Else
+    {
+      Change AGGREGATE_LIMIT_POL
+        Begin
+          AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+          AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+          AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+          AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+          AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+          AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+          AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = 0
+          AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+          AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppUMBRELLA:OCCURRENCE
+          AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = l_umbrella_premium
+          AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+          AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+          AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+          AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+          AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+          AGGREGATE_LIMIT_POL:agent_no                   = sfpname:agent_no
+          AGGREGATE_LIMIT_POL:county                     = 0
+          AGGREGATE_LIMIT_POL:square_footage             = 0
+          AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+          AGGREGATE_LIMIT_POL:tier                       = 0
+        End -- end of change
+    }
+  COUNTER = COUNTER + 1
+END
+
+procedure update_work_AGGREGATE_LIMIT_POL_file
+
+BEGIN
+  local unsigned ascii number l_wcp_deposit_premium[8];
+
+  Access wcpgeneral,
+     Set wcpgeneral:POLICY_NO     = SFPMASTER:POLICY_NO,
+         wcpgeneral:POL_YEAR      = SFPMASTER:POL_YEAR,
+         wcpgeneral:END_SEQUENCE  = SFPMASTER:END_SEQUENCE, generic
+
+  L_COMPANY_ID     = SFpname:COMPANY_ID
+
+  Access AGGREGATE_LIMIT_POL,
+     Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+  if sfpmaster:total[20] <= 0 then
+    l_wcp_deposit_premium = SFPMASTER:TOTAL[18]
+  else
+    l_wcp_deposit_premium = SFPMASTER:TOTAL[20]
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[5]=     ",Str(SFPMASTER:TOTAL[5],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no=    ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=     ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = wcpgeneral:PREM_NO
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = wcpgeneral:BUILD_NO
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = 0
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = wcpgeneral:employers_liability[2]
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = l_wcp_deposit_premium
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfpname:agent_no
+            AGGREGATE_LIMIT_POL:county                     = wcpgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of add
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = wcpgeneral:PREM_NO
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = wcpgeneral:BUILD_NO
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = 0
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = wcpgeneral:employers_liability[2]
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = l_wcp_deposit_premium
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfpname:agent_no
+            AGGREGATE_LIMIT_POL:county                     = wcpgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of change
+      }
+    COUNTER = COUNTER + 1
+END
+
+
+procedure update_cinland_AGGREGATE_LIMIT_POL_file
+
+BEGIN
+  Access cppliablimits,
+     Set cppliablimits:POLICY_NO     = SFPMASTER:POLICY_NO,
+         cppliablimits:POL_YEAR      = SFPMASTER:POL_YEAR,
+         cppliablimits:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,exact
+
+  Access cppgeneral,
+     Set cppgeneral:POLICY_NO     = SFPMASTER:POLICY_NO,
+         cppgeneral:POL_YEAR      = SFPMASTER:POL_YEAR,
+         cppgeneral:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,exact
+
+  Access cppinland,
+     Set cppinland:POLICY_NO     = SFPMASTER:POLICY_NO,
+         cppinland:POL_YEAR      = SFPMASTER:POL_YEAR,
+         cppinland:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,generic
+
+  Access cppimcov,
+     set cppimcov:policy_no    = sfpmaster:policy_no,
+         cppimcov:pol_year     = SFPMASTER:POL_YEAR,
+         cppimcov:END_SEQUENCE = SFPMASTER:END_SEQUENCE,generic
+
+  L_COMPANY_ID     = Sfpname:COMPANY_ID
+
+--  Access AGGREGATE_LIMIT_POL,
+--     Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--  Write ("%c%s%s",01001,"sfpmaster:total[5]=    ",Str(SFPMASTER:TOTAL[5],"ZZ,ZZZ,ZZZ.99"))
+--  Write ("%c%s%n",02001,"sfpmaster:policy no=    ",SFPMASTER:POLICY_NO)
+--  Write ("%c%s%n",03001,"sfpmaster:pol year=     ",SFPMASTER:POL_YEAR)
+--  Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+  l_cppinland_building_limit = 0
+  while cppimcov:policy_no    = sfpmaster:policy_no and
+        cppimcov:pol_year     = SFPMASTER:POL_YEAR and
+        cppimcov:END_SEQUENCE = SFPMASTER:END_SEQUENCE
+    {
+      l_cppinland_building_limit = l_cppinland_building_limit + cppimcov:limit
+      next cppimcov
+    }
+
+
+  If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+    {
+      Add AGGREGATE_LIMIT_POL
+        Begin
+          AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+          AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+          AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+          AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+          AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+          AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+          AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppgeneral:DEDUCTIBLE
+          AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_cppinland_building_limit
+          AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+          AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+          AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[5]
+          AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+          AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+          AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+          AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+          AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+          AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+          AGGREGATE_LIMIT_POL:county                     = cppinland:county
+          AGGREGATE_LIMIT_POL:square_footage             = 0
+          AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+          AGGREGATE_LIMIT_POL:tier                       = 0
+
+        End -- end of add
+      L_PROPERTY_PREMIUM = 0
+    }
+  Else
+    {
+      Change AGGREGATE_LIMIT_POL
+        Begin
+          AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+          AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+          AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+          AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+          AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+          AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+          AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppgeneral:DEDUCTIBLE
+          AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_cppinland_building_limit
+          AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+          AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+          AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+          AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+          AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[5]
+          AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+          AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+          AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+          AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+          AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+          AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+          AGGREGATE_LIMIT_POL:county                     = cppinland:county
+          AGGREGATE_LIMIT_POL:square_footage             = 0
+          AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+          AGGREGATE_LIMIT_POL:tier                       = 0
+
+        End -- end of change
+    }
+  COUNTER = COUNTER + 1
+END
+
+procedure update_liability_AGGREGATE_LIMIT_POL_file
+
+BEGIN
+  Access cppliability,
+     Set cppliability:POLICY_NO     = SFPMASTER:POLICY_NO,
+         cppliability:POL_YEAR      = SFPMASTER:POL_YEAR,
+         cppliability:END_SEQUENCE  = SFPMASTER:END_SEQUENCE,
+         cppliability:prem_no       = sfplocation:prem_no,
+         cppliability:build_no      = sfplocation:build_no, generic
+
+    Access cppliablimits,
+       Set cppliablimits:POLICY_NO     = SFPMASTER:POLICY_NO,
+           cppliablimits:POL_YEAR      = SFPMASTER:POL_YEAR,
+           cppliablimits:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,exact
+
+--    Access AGGREGATE_LIMIT_POL,
+--       Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[5]=    ",Str(SFPMASTER:TOTAL[5],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no=    ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=     ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = SFPLOCATION:PREM_NO
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = SFPLOCATION:BUILD_NO
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppgeneral:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] +
+                                                             SFPMASTER:TOTAL[2] +
+                                                             sfpmaster:total[3] +
+                                                             sfpmaster:total[4] +
+                                                             sfpmaster:total[5] +
+                                                             sfpmaster:total[6] +
+                                                             sfpmaster:total[7] +
+                                                             sfpmaster:total[8] +
+                                                             sfpmaster:total[10] +
+                                                             sfpmaster:other_totals[17] +
+                                                             sfpmaster:other_totals[18] +
+                                                             sfpmaster:other_totals[19] +
+                                                             sfpmaster:terrorism_premium
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppliability:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = SFPLOCATION:PREM_NO
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = SFPLOCATION:BUILD_NO
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = 0
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] +
+                                                             SFPMASTER:TOTAL[2] +
+                                                             sfpmaster:total[3] +
+                                                             sfpmaster:total[4] +
+                                                             sfpmaster:total[5] +
+                                                             sfpmaster:total[6] +
+                                                             sfpmaster:total[7] +
+                                                             sfpmaster:total[8] +
+                                                             sfpmaster:total[10] +
+                                                             sfpmaster:other_totals[17] +
+                                                             sfpmaster:other_totals[18] +
+                                                             sfpmaster:other_totals[19] +
+                                                             sfpmaster:terrorism_premium
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppliability:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of change
+        --L_PROPERTY_PREMIUM = 0
+      }
+    COUNTER = COUNTER + 1
+END
+
+Procedure UPDATE_AGGREGATE_LIMIT_POL_FILE   --bop
+
+Begin
+  unsigned ascii number l_BUILDING_LIMIT[8];
+  unsigned ascii number l_contents_limit[8];
+  unsigned ascii number l_business_income[8],
+                        l_other_structures[8];
+
+  access PRSRECONTROL,
+     Set PRSRECONTROL:COMPANY_ID = SFSDEFAULT:COMPANY_ID, Generic
+  --access reinsurance control file to get the property and liabiity spilt percent.
+
+  Access BOPGENERAL,
+     Set BOPGENERAL:POLICY_NO    = SFPMASTER:POLICY_NO,
+         BOPGENERAL:POL_YEAR     = SFPMASTER:POL_YEAR,
+         BOPGENERAL:END_SEQUENCE = SFPMASTER:END_SEQUENCE ,Generic
+
+  while BOPGENERAL:POLICY_NO    = SFPMASTER:POLICY_NO and
+        BOPGENERAL:POL_YEAR     = SFPMASTER:POL_YEAR and
+        BOPGENERAL:END_SEQUENCE = SFPMASTER:END_SEQUENCE
+    {
+      l_BUILDING_LIMIT = l_BUILDING_LIMIT + bopgeneral:building_limit
+      l_contents_limit = l_contents_limit + bopgeneral:property_limit
+      l_other_structures = L_other_structures + BOPGENERAL:OTHER_STRUCTURES
+
+      access sfplocation,
+         set sfplocation:policy_no    = bopgeneral:policy_no,
+             sfplocation:pol_year     = bopgeneral:pol_year,
+             sfplocation:end_sequence = bopgeneral:end_sequence,
+             sfplocation:prem_no      = bopgeneral:prem_no,
+             sfplocation:build_no     = bopgeneral:build_no, generic
+
+      If BOPGENERAL:LOSS_INCOME_LIMIT = 0 Then
+        {
+          L_BUSINESS_INCOME = L_business_income + SFPLOCATION:BUSINESS_INCOME
+        }
+      Else
+        {
+          L_BUSINESS_INCOME = l_business_income + BOPGENERAL:LOSS_INCOME_LIMIT
+        }
+
+      next bopgeneral
+    }
+
+  Access BOPGENERAL,
+     Set BOPGENERAL:POLICY_NO    = SFPMASTER:POLICY_NO,
+         BOPGENERAL:POL_YEAR     = SFPMASTER:POL_YEAR,
+         BOPGENERAL:END_SEQUENCE = SFPMASTER:END_SEQUENCE ,Generic
+
+
+  L_LIABILITY_CODE = SFPMASTER:LIABILITY_CODE
+
+    Access SFSLIABILITY,
+       Set SFSLIABILITY:COMPANY_ID       = L_COMPANY_ID,
+           SFSLIABILITY:STATE            = BOPGENERAL:STATE,
+           SFSLIABILITY:LINE_OF_BUSINESS = BOPGENERAL:LINE_OF_BUSINESS,
+           SFSLIABILITY:LIABILITY_CODE   = L_LIABILITY_CODE,Exact
+
+    L_LIABILITY_LIMIT = SFSLIABILITY:LIMIT
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[17]= ",Str(SFPMASTER:TOTAL[17],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no= ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=  ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO and 
+       sfpmaster:trans_eff => 11.10.2018 Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = SFPMASTER:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_building_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = l_contents_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = l_BUSINESS_INCOME
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = L_LIABILITY_LIMIT
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] + SFPMASTER:TOTAL[2] + sfpmaster:total[7] +
+                                                             SFPMASTER:TERRORISM_PREMIUM
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = l_OTHER_STRUCTURES
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = bopgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = SFPMASTER:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_BUILDING_LIMIT
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = l_contents_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = L_BUSINESS_INCOME
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = L_LIABILITY_LIMIT
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] + SFPMASTER:TOTAL[2] + sfpmaster:total[7] +
+                                                             SFPMASTER:TERRORISM_PREMIUM
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = l_OTHER_STRUCTURES
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = bopgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of change
+        --L_PROPERTY_PREMIUM = 0
+      }
+    COUNTER = COUNTER + 1
+End -- end of procedure
+
+
+Procedure UPDATE_scp_AGGREGATE_LIMIT_POL_FILE
+
+Begin
+   unsigned ascii number l_BUILDING_LIMIT[8];
+   unsigned ascii number l_contents_limit[8];
+   unsigned ascii number l_business_income[8];
+
+   Access PRSRECONTROL,
+      Set PRSRECONTROL:COMPANY_ID = SFSDEFAULT:COMPANY_ID, Generic
+--access reinsurance control file to get the property and liabiity spilt percent.
+
+    Access SCPCONTRACTOR,
+       Set SCPCONTRACTOR:POLICY_NO     = SFPMASTER:POLICY_NO,
+           SCPCONTRACTOR:POL_YEAR      = SFPMASTER:POL_YEAR,
+           SCPCONTRACTOR:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,Generic
+
+    while SCPCONTRACTOR:POLICY_NO     = SFPMASTER:POLICY_NO and
+          SCPCONTRACTOR:POL_YEAR      = SFPMASTER:POL_YEAR and
+          SCPCONTRACTOR:END_SEQUENCE  = SFPMASTER:END_SEQUENCE
+      begin
+        l_BUILDING_LIMIT  = l_building_limit + SCPCONTRACTOR:BUILDING_LIMIT
+        l_contents_limit  = l_contents_limit + SCPCONTRACTOR:PROPERTY_LIMIT+SCPCONTRACTOR:PERSONAL_LIMIT
+        l_business_income = l_business_income + SCPCONTRACTOR:LOSS_LIMIT
+        next scpcontractor
+      end
+
+    Access SCPCONTRACTOR,
+       Set SCPCONTRACTOR:POLICY_NO     = SFPMASTER:POLICY_NO,
+           SCPCONTRACTOR:POL_YEAR      = SFPMASTER:POL_YEAR,
+           SCPCONTRACTOR:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,Generic
+
+    access SCPLIABLIMITS,
+       Set scpliablimits:POLICY_NO     = SFPMASTER:POLICY_NO,
+           scpliablimits:POL_YEAR      = SFPMASTER:POL_YEAR,
+           scpliablimits:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,Generic
+
+--    Access AGGREGATE_LIMIT_POL,
+--       Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[1 + 10 + 9]= ",Str((SFPMASTER:TOTAL[1] - sfpmaster:total[10] - sfpmaster:total[9]),"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no= ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=  ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = SCPCONTRACTOR:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_building_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = l_contents_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = l_business_income
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = SCPLIABLIMITS:OCCURRENCE
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:total[19]+sfpmaster:total[18]+sfpmaster:total[7]+SFPMASTER:TERRORISM_PREMIUM
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = scpcontractor:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPLOCATION:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = PLPPERSONAL:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = SCPCONTRACTOR:BUILDING_LIMIT
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = SCPCONTRACTOR:PROPERTY_LIMIT + SCPCONTRACTOR:PERSONAL_LIMIT
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = SCPCONTRACTOR:LOSS_LIMIT
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = SCPLIABLIMITS:OCCURRENCE
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:total[19]+sfpmaster:total[18]+sfpmaster:total[7]+SFPMASTER:TERRORISM_PREMIUM
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = scpcontractor:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of change
+        --L_PROPERTY_PREMIUM = 0
+      }
+    COUNTER = COUNTER + 1
+End -- Procedure
+
+
+Procedure UPDATE_FARM_AGGREGATE_LIMIT_POL_FILE
+
+Begin
+  Access PRSRECONTROL,
+     Set PRSRECONTROL:COMPANY_ID = SFSDEFAULT:COMPANY_ID, Generic
+  --access reinsurance control file to get the property and liabiity spilt percent.
+
+    Access cppfarm,
+       Set cppfarm:POLICY_NO     = SFPMASTER:POLICY_NO,
+           cppfarm:POL_YEAR      = SFPMASTER:POL_YEAR,
+           cppfarm:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,Generic
+
+--    Access AGGREGATE_LIMIT_POL,
+--       Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[17]= ",Str(SFPMASTER:TOTAL[17],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no= ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=  ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppfarm:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = cppfarm:coverage_a_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = cppfarm:coverage_c_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = cppfarm:coverage_d_limit
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[17] * PRSRECONTROL:PLP_MULTI_SPLIT_LIABILITY
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppfarm:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppfarm:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = cppfarm:coverage_a_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = cppfarm:coverage_c_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = cppfarm:coverage_d_limit
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[17] * PRSRECONTROL:PLP_MULTI_SPLIT_LIABILITY   -- location_premium
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppfarm:county
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of change
+        --L_PROPERTY_PREMIUM = 0
+      }
+    COUNTER = COUNTER + 1
+
+
+
+End -- Procedure
+
+Procedure UPDATE_auto_AGGREGATE_LIMIT_POL_FILE
+
+Begin
+  local unsigned ascii number l_current_auto_count[4];
+  Access PRSRECONTROL,
+     Set PRSRECONTROL:COMPANY_ID = SFSDEFAULT:COMPANY_ID, Generic
+
+--access reinsurance control file to get the property and liabiity spilt percent.
+
+Access capvehicle,
+   Set capvehicle:POLICY_NO     = SFPMASTER:POLICY_NO,
+       capvehicle:POL_YEAR      = SFPMASTER:POL_YEAR,
+       capvehicle:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,Generic
+
+access capvehicle_alias,
+   set capvehicle_alias:POLICY_NO    = capvehicle:POLICY_NO,
+       capvehicle_alias:pol_year     = capvehicle:POL_YEAR,
+       capvehicle_alias:end_sequence = capvehicle:END_SEQUENCE, generic
+
+
+while capvehicle_alias:POLICY_NO    = capvehicle:POLICY_NO and
+      capvehicle_alias:pol_year     = capvehicle:POL_YEAr and
+      capvehicle_alias:end_sequence = capvehicle:END_SEQUENCE
+  begin
+    l_current_auto_count = l_current_auto_count + 1
+    next capvehicle_alias
+  end
+
+While capvehicle:POLICY_NO    = SFPMASTER:POLICY_NO And
+      capvehicle:POL_YEAR     = SFPMASTER:POL_YEAR And
+      capvehicle:END_SEQUENCE = SFPMASTER:END_SEQUENCE
+  {
+    Access AGGREGATE_LIMIT_POL,
+       Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[1]     = ",Str(SFPMASTER:TOTAL[1],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no    = ",SFPMASTER:POLICY_NO)
+ --   Write ("%c%s%n",03001,"sfpmaster:pol year     = ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence = ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = CAPVEHICLE:policy_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = capvehicle:vehicle_no
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 0
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = capvehicle:COMP_DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0 --capvehicle:original_cost
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = sfpmaster:liability
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = sfpmaster:TOTAL[7]+SFPMASTER:TOTAL[8]+
+                                                             SFPMASTER:TOTAL[10]+SFPMASTER:TOTAL[1]+
+                                                             SFPMASTER:TOTAL[11]+SFPMASTER:TOTAL[12]+
+                                                             SFPMASTER:TOTAL[2]+SFPMASTER:TOTAL[5]+
+                                                             SFPMASTER:TOTAL[6]+SFPMASTER:TOTAL[3]+
+                                                             SFPMASTER:TOTAL[9]+SFPMASTER:TOTAL[14]+
+                                                             SFPMASTER:TOTAL[15]+SFPMASTER:TOTAL[4]+
+                                                             SFPMASTER:OTHER_TOTALS[9]+
+                                                             SFPMASTER:OTHER_TOTALS[18]
+
+
+
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = capvehicle:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+            AGGREGATE_LIMIT_POL:number_of_auto             = l_current_auto_count
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = capvehicle:vehicle_no
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 0
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = sfpname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = capvehicle:COMP_DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = 0  -- capvehicle:original_cost
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = 0
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = 0
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = sfpmaster:liability
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = sfpmaster:TOTAL[7]+SFPMASTER:TOTAL[8]+
+                                                             SFPMASTER:TOTAL[10]+SFPMASTER:TOTAL[1]+
+                                                             SFPMASTER:TOTAL[11]+SFPMASTER:TOTAL[12]+
+                                                             SFPMASTER:TOTAL[2]+SFPMASTER:TOTAL[5]+
+                                                             SFPMASTER:TOTAL[6]+SFPMASTER:TOTAL[3]+
+                                                             SFPMASTER:TOTAL[9]+SFPMASTER:TOTAL[14]+
+                                                             SFPMASTER:TOTAL[15]+SFPMASTER:TOTAL[4]+
+                                                             SFPMASTER:OTHER_TOTALS[9]+
+                                                             SFPMASTER:OTHER_TOTALS[18]
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = capvehicle:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+            AGGREGATE_LIMIT_POL:number_of_auto             = l_current_auto_count
+          End -- end of change
+      }
+    COUNTER = COUNTER + 1
+    Next capvehicle
+  } -- end of while
+End -- Procedure
+
+
+Procedure UPDATE_SMP_AGGREGATE_LIMIT_POL_FILE
+
+Begin
+  unsigned ascii number l_building_limit[8],
+                        l_business_income_limit[8],
+                        l_contents_limit[8];
+
+  Access PRSRECONTROL,
+     Set PRSRECONTROL:COMPANY_ID = SFSDEFAULT:COMPANY_ID, Generic
+
+--access reinsurance control file to get the property and liabiity spilt percent.
+
+    Access cppgeneral,
+       Set cppgeneral:POLICY_NO     = SFPMASTER:POLICY_NO,
+           cppgeneral:POL_YEAR      = SFPMASTER:POL_YEAR,
+           cppgeneral:END_SEQUENCE  = SFPMASTER:END_SEQUENCE, generic
+
+    Access cppliablimits,
+       Set cppliablimits:POLICY_NO     = SFPMASTER:POLICY_NO,
+           cppliablimits:POL_YEAR      = SFPMASTER:POL_YEAR,
+           cppliablimits:END_SEQUENCE  = SFPMASTER:END_SEQUENCE ,exact
+
+    Access AGGREGATE_LIMIT_POL,
+       Set AGGREGATE_LIMIT_POL:POLICY_NO = SFPMASTER:POLICY_NO, Using Second Index
+
+--    Write ("%c%s%s",01001,"sfpmaster:total[17]=    ",Str(SFPMASTER:TOTAL[17],"ZZ,ZZZ,ZZZ.99"))
+--    Write ("%c%s%n",02001,"sfpmaster:policy no=    ",SFPMASTER:POLICY_NO)
+--    Write ("%c%s%n",03001,"sfpmaster:pol year=     ",SFPMASTER:POL_YEAR)
+--    Write ("%c%s%n",04001,"sfpmaster:end sequence= ",SFPMASTER:END_SEQUENCE)
+--    Read(11,1,"location limit here",L_ENTER,1)
+    while cppgeneral:POLICY_NO     = SFPMASTER:POLICY_NO and
+          cppgeneral:POL_YEAR      = SFPMASTER:POL_YEAR and
+          cppgeneral:END_SEQUENCE  = SFPMASTER:END_SEQUENCE
+      {
+        l_building_limit = l_building_limit + cppgeneral:limit[1]
+        l_contents_limit = l_contents_limit + cppgeneral:limit[2]
+        next cppgeneral
+      }
+
+    Access cppgeneral,
+       Set cppgeneral:POLICY_NO     = SFPMASTER:POLICY_NO,
+           cppgeneral:POL_YEAR      = SFPMASTER:POL_YEAR,
+           cppgeneral:END_SEQUENCE  = SFPMASTER:END_SEQUENCE, generic
+
+    access cppbusiness,
+       set cppbusiness:policy_no    = SFPMASTER:POLICY_NO,
+           cppbusiness:pol_year     = SFPMASTER:POL_YEAR,
+           cppbusiness:end_sequence = SFPMASTER:END_SEQUENCE, generic
+
+    while cppbusiness:policy_no    = SFPMASTER:POLICY_No and
+          cppbusiness:pol_year     = SFPMASTER:POL_YEAR and
+          cppbusiness:end_sequence = SFPMASTER:END_SEQUENCE
+      begin
+        l_business_income_limit = l_business_income_limit + cppBUSINESS:LIMIT
+        next cppbusiness
+      end
+
+    access cppbusiness,
+       set cppbusiness:policy_no    = SFPMASTER:POLICY_NO,
+           cppbusiness:pol_year     = SFPMASTER:POL_YEAR,
+           cppbusiness:end_sequence = SFPMASTER:END_SEQUENCE, generic
+
+    If AGGREGATE_LIMIT_POL:POLICY_NO <> SFPMASTER:POLICY_NO Then
+      {
+        Add AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPLOCATION:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppgeneral:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_building_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = cppgeneral:deductible
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = l_contents_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = cppgeneral:contents_deductible
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = l_business_income_limit
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] +
+                                                             SFPMASTER:TOTAL[2] +
+                                                             sfpmaster:total[3] +
+                                                             sfpmaster:total[4] +
+                                                             sfpmaster:total[5] +
+                                                             sfpmaster:total[6] +
+                                                             sfpmaster:total[7] +
+                                                             sfpmaster:total[8] +
+                                                             sfpmaster:total[10] +
+                                                             sfpmaster:other_totals[17] +
+                                                             sfpmaster:other_totals[18] +
+                                                             sfpmaster:other_totals[19] +
+                                                             sfpmaster:terrorism_premium
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+
+          End -- end of add
+        L_PROPERTY_PREMIUM = 0
+      }
+    Else
+      {
+        Change AGGREGATE_LIMIT_POL
+          Begin
+            AGGREGATE_LIMIT_POL:COMPANY_ID                 = L_COMPANY_ID
+            AGGREGATE_LIMIT_POL:POLICY_NO                  = SFPMASTER:POLICY_NO
+            AGGREGATE_LIMIT_POL:PREM_NO                    = 1
+            AGGREGATE_LIMIT_POL:BUILD_NO                   = 1
+            AGGREGATE_LIMIT_POL:BLANKET_LIMIT              = 0
+            AGGREGATE_LIMIT_POL:LINE_OF_BUSINESS           = SFPname:LINE_OF_BUSINESS
+            AGGREGATE_LIMIT_POL:DEDUCTIBLE                 = cppgeneral:DEDUCTIBLE
+            AGGREGATE_LIMIT_POL:BUILDING_LIMIT             = l_building_limit
+            AGGREGATE_LIMIT_POL:BUILDING_DEDUCTIBLE        = cppgeneral:deductible
+            AGGREGATE_LIMIT_POL:CONTENTS_LIMIT             = l_contents_limit
+            AGGREGATE_LIMIT_POL:CONTENTS_DEDUCTIBLE        = cppgeneral:contents_deductible
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_LIMIT      = l_business_income_limit
+            AGGREGATE_LIMIT_POL:BUSINESS_INCOME_DEDUCTIBLE = 0
+            AGGREGATE_LIMIT_POL:CASUALTY_LIMIT             = cppliablimits:occurrence
+            AGGREGATE_LIMIT_POL:CASUALTY_PREMIUM           = SFPMASTER:TOTAL[1] +
+                                                             SFPMASTER:TOTAL[2] +
+                                                             sfpmaster:total[3] +
+                                                             sfpmaster:total[4] +
+                                                             sfpmaster:total[5] +
+                                                             sfpmaster:total[6] +
+                                                             sfpmaster:total[7] +
+                                                             sfpmaster:total[8] +
+                                                             sfpmaster:total[10] +
+                                                             sfpmaster:other_totals[17] +
+                                                             sfpmaster:other_totals[18] +
+                                                             sfpmaster:other_totals[19] +
+                                                             sfpmaster:terrorism_premium
+
+            AGGREGATE_LIMIT_POL:TRANS_CODE                 = SFPMASTER:TRANS_CODE
+            AGGREGATE_LIMIT_POL:TRANS_DATE                 = SFPMASTER:TRANS_DATE
+            AGGREGATE_LIMIT_POL:TRANS_EFF                  = SFPMASTER:TRANS_EFF
+            AGGREGATE_LIMIT_POL:TRANS_EXP                  = SFPMASTER:TRANS_EXP
+            AGGREGATE_LIMIT_POL:OTHER_STRUCTURES_LIMIT     = 0
+            AGGREGATE_LIMIT_POL:agent_no                   = sfsagent:agent_no
+            AGGREGATE_LIMIT_POL:county                     = cppgeneral:county
+            AGGREGATE_LIMIT_POL:square_footage             = 0
+            AGGREGATE_LIMIT_POL:eff_date                   = sfpname:eff_date
+            AGGREGATE_LIMIT_POL:tier                       = 0
+          End -- end of change
+        --L_PROPERTY_PREMIUM = 0
+      }
+    COUNTER = COUNTER + 1
+End -- Procedure
+
+
+End -- end of program (batch)

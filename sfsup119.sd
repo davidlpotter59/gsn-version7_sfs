@@ -1,0 +1,1949 @@
+%%
+/*  sfsup119.sd
+
+    September 9, 2010
+
+    SCIPS.com
+
+    Interface update program for SCIPS delos aggregate limit report - Location Level
+    information.  This program will write out sfsline:lob_code = "SMP",
+    and "BOP","SCP".  This program will have the cancelled policies in it, but the
+    program that will write this information out to a comma separted file
+    will have the condition in it to not write out the cancelled polices.
+*/
+
+/*  APRIL 7, 2015 - DLP (ALL UPDATES ARE IN UPPER CASE
+    ADDED PROTECTION AND SPRINKLERED WHERE POSSIBLE
+    IF THE DOMAIN FOR THE lob DID NOT HAVE A VALUE THEN AGGREGATE_LIMIT_LOC WAS ASSIGNED A 0 VALUE
+*/
+
+Program
+        Name = "sfsup119" ;
+        Type = "File" ;
+        Domain = "dummy";
+        Padcharacter = Space ;
+
+        Number COUNTER = 1;
+
+        String L_COMPANY_ID[10]="",
+               L_SFS_CODE[3]="SFS",
+               l_terr[1] = "N" ;
+
+        Wdate G_STARTING_DATE,
+              G_ENDING_DATE;
+        rwdate l_eff_date;
+          wdate l_eff_date1;
+
+        Unsigned Ascii Number l_current_end_sequence[4],
+                              l_lob[4],
+                              l_policy_no[9]=0,
+                              l_cinland_contents[9] = 0,
+                              l_cppendorse_building_limit[9],
+                              l_cancelled[1] = 0,
+                              l_peak_season[8],
+                              l_loss_accessment[8],
+                              l_garagekeepers[8],
+                              l_employee_dishoesty[8],
+                              l_glass_limit[8],
+                              l_form[1],
+                              l_comp_desc_limit[8],
+                              l_cpp_business_income_limit[8],
+                              l_county[3],
+                              l_building_deductible[5],
+                              l_contents_deductible[5],
+                              l_current_pol_year[4],
+                              l_policy_type5[2],
+                              l_class_code[5] = 0,
+
+                              l_policy_type6[2];
+
+        Signed Ascii Number l_misc_premium[8],
+                            l_supplemental_premium[8],
+                            l_optional_coverages[8],
+                            l_cpp_business_income[8];
+
+
+        String L_ENTER[1];
+        String L_SFS[3]="SFS",
+               l_misc[1]="N",
+               l_class_code_description[75] = "",
+               l_lob_subline[4] ;
+
+        Unsigned Ascii Number L_PREM_NO[4]=0;
+        Unsigned Ascii Number L_BUILD_NO[4]=0;
+        Unsigned Ascii Number L_STATE[2];
+        Unsigned Ascii Number L_LIABILITY_CODE[2];
+        Unsigned Ascii Number L_BUSINESS_INCOME[9];
+        UNsigned Ascii NUmber l_cinland_property_premium[9];
+        Signed Ascii Number L_PROPERTY_PREMIUM[9];
+
+Initialisation
+  Write ("<014>")  --clear screen
+  Access SFSDEFAULT, Set SFSDEFAULT:SFS_CODE = L_SFS_CODE
+  G_STARTING_DATE = Date(COMMANDLINE[1,8])
+  G_ENDING_DATE   = Date(COMMANDLINE[9,16])
+  Access SFSDEFAULT,
+     Set SFSDEFAULT:SFS_CODE = L_SFS
+
+  Access prsreinsplit,
+     Set prsreinsplit:COMPANY_ID = SFSDEFAULT:COMPANY_ID ,Generic
+
+  access sfpmaster,
+     set sfpmaster:policy_no = l_policy_no, approximate
+
+  while sfpmaster:errornumber <> 4026
+    {
+      access sfpname,
+         set sfpname:policy_no    = SFPMASTER:POLICY_NO,
+             sfpname:pol_year     = SFPMASTER:POL_YEar  ,
+             sfpname:END_SEQUENCE = SFPMASTER:END_SEQUENCE,exact
+
+      access sfsline,
+         set sfsline:company_ID       = sfpname:company_id,
+             sfsline:line_of_business = sfpname:line_of_business,
+             sfsline:lob_subline      = "00", exact
+
+      access sfppoint,
+         set sfppoint:policy_no       = sfpname:policy_no,
+             sfppoint:pol_year        = sfpname:pol_year, exact
+
+      If (SFPMASTER:TRANS_DATE < G_STARTING_DATE And
+          SFPMASTER:TRANS_EFF >= G_STARTING_DATE And
+          SFPMASTER:TRANS_EFF <= G_ENDING_DATE) or
+
+         (SFPMASTER:TRANS_DATE >= G_STARTING_DATE And
+          SFPMASTER:TRANS_DATE <= G_ENDING_DATE And
+          SFPMASTER:TRANS_EFF  <= G_ENDING_DATE) then
+        {
+          if (sfpname:company_id one of "GGUND" and
+              sfpname:eff_date >= 9.01.2011) or
+             (sfpname:company_id one of "DELOS" and
+              sfpname:eff_date < 09.01.2011) then
+            {
+              if (SFSLINE:LOB_CODE One Of "BOP", "SCP", "PROPERTY", "SMP", "CINLAND", "FARMFIRE", "AUTO", "WORK","UMBRELLA" and
+                 (sfpname:status not one of "NONRENEWED", "CANCELLED", "LOSSES") or
+                 (sfpname:status one of "NONRENEWED" and    --need to modify run with a mode so the report will not have nonrenewed premium
+                   sfpname:exp_date > g_ending_date)) and
+                 ((sfppoint:converted one of "Y" or     --check to make sure the transaction was updated if not do not use it.
+                  (sfppoint:converted one of "N" and
+                   sfpmaster:end_sequence < sfppoint:end_sequence))) then
+               Begin
+                  Access prsreinsplit,
+                     Set prsreinsplit:COMPANY_ID       = SFpname:COMPANY_ID,
+                         prsreinsplit:line_of_business = sfpname:line_of_business, generic
+
+                  while prsreinsplit:company_id      = sfpname:company_id and
+                        prsreinsplit:line_of_business = sfpname:line_of_business
+                    {
+                      if l_eff_date <= sfpname:eff_date then
+                        {
+                          l_eff_date =  prsreinsplit:reff_date
+                        }
+                      next prsreinsplit
+                    }
+
+                  Access prsreinsplit,
+                     Set prsreinsplit:COMPANY_ID       = SFpname:COMPANY_ID,
+                         prsreinsplit:line_of_business = sfpname:line_of_business,
+                         prsreinsplit:reff_date        = l_eff_date, generic
+
+                  l_company_id = sfpname:company_id
+                  do check_current_status  --need to make sure that the current status is not cancelled
+                  if l_cancelled not one of 1 then
+                    {
+                      Do UPDATE_SFSGUYCARP_FILE
+                    }
+                End
+              counter = counter + 1
+            }
+        }
+      next sfpmaster
+    }
+  Write ("%c%s%n",15001,"Update is Compete......",COUNTER)
+  do delete_old_endsequence_records
+
+Update
+
+Screen Exit
+
+
+Procedure Definition
+
+procedure delete_old_endsequence_records
+
+BEGIN
+  l_policy_no = 0
+  Access aggregate_limit_loc,
+     Set aggregate_limit_loc:COMPANY_ID = "", approximate
+
+  while aggregate_limit_loc:errornumber = 0
+    {
+      l_policy_no = aggregate_limit_loc:policy_no
+      do find_most_current_end_sequence
+      if l_current_end_sequence <> aggregate_limit_loc:end_sequence and
+         l_current_pol_year <> aggregate_limit_loc:end_sequence then
+        {
+          delete aggregate_limit_loc
+        }
+      next aggregate_limit_loc
+    }
+END
+
+procedure find_most_current_end_sequence
+
+BEGIN
+  local file aggregate_limit_loc_current = alias for aggregate_limit_loc;
+
+  access aggregate_limit_loc_current,
+     set aggregate_limit_loc_current:company_id = "GGUND",
+         aggregate_limit_loc_current:policy_no  = l_policy_no, generic
+
+  l_current_end_sequence = 0
+  l_current_pol_year = 0
+  while aggregate_limit_loc_current:company_id = "GGUND" and
+        aggregate_limit_loc_current:POLIcy_no  = l_policy_no
+    {
+--      if l_current_pol_year < aggregate_limit_loc_current:pol_year then
+--        {
+          l_current_pol_year =  aggregate_limit_loc_current:pol_year
+          l_current_end_sequence = aggregate_limit_loc_current:end_sequence
+
+--      if l_current_end_sequence < aggregate_limit_loc_current:end_sequence then
+--        {
+--          l_current_pol_year     = aggregate_limit_loc_current:pol_year
+--          l_current_end_sequence = aggregate_limit_loc_current:end_sequence
+--        }
+      next aggregate_limit_loc_current
+    }
+END
+
+Procedure check_current_status
+
+BEGIN
+  access sfpcurrent,
+     set sfpcurrent:policy_no = sfpname:policy_no, exact
+
+  Access sfpmaster_alias,
+     set sfpmaster_alias:policy_no    = sfpcurrent:policy_no,
+         sfpmaster_alias:pol_year     = sfpcurrent:pol_year,
+         sfpmaster_alias:end_sequence = sfpcurrent:end_sequence, exact
+
+  l_company_id = sfpname:company_id
+
+  while sfpmaster_alias:trans_date >= g_starting_date and
+        sfpmaster_alias:trans_date > g_ending_date and
+        sfpmaster_alias:policy_no = sfpname:policy_no
+    {
+      previous sfpmaster_alias     --I need to make sure that the trans_date is withing the date range.
+                                   --I will continue to process the record until I find the latest
+                                   --transaction that falls within the date range.
+    }
+
+  while sfpmaster_alias:trans_eff > G_ending_date and
+        sfpmaster_alias:trans_eff >= G_starting_date and
+        sfpmaster_alias:policy_no = sfpname:policy_no
+    {
+      previous sfpmaster_alias     --if the current status of the record is after the expiration date
+    }
+
+  access sfpname_alias,
+     set sfpname_alias:policy_no    = sfpmaster_alias:policy_no,
+         sfpname_alias:pol_year     = sfpmaster_alias:pol_year,
+         sfpname_alias:end_sequence = sfpmaster_alias:end_sequence
+
+  if (sfpname_alias:status = "CANCELLED") or (sfpname_alias:status one of "NONRENEWED" and
+      sfpname_alias:exp_date <= g_ending_date) then
+    {
+      l_cancelled = 1
+    }
+  else
+    {
+      l_cancelled = 0
+    }
+END
+
+Procedure UPDATE_SFSGUYCARP_FILE
+
+Begin
+
+Access SFPLOCATION,
+   Set SFPLOCATION:POLICY_NO    = SFPMASTER:POLICY_NO,
+       SFPLOCATION:POL_YEAR     = SFPMASTER:POL_YEAR,
+       SFPLOCATION:END_SEQUENCE = SFPMASTER:END_SEQUENCE, Generic
+
+While SFPLOCATION:POLICY_NO    = SFPMASTER:POLICY_NO And
+      SFPLOCATION:POL_YEAR     = SFPMASTER:POL_YEAR And
+      SFPLOCATION:END_SEQUENCE = SFPMASTER:END_SEQUENCE
+  {
+    L_PREM_NO  = SFPLOCATION:PREM_NO
+    L_BUILD_NO = SFPLOCATION:BUILD_NO
+    Access PLPPERSONAL,
+       Set PLPPERSONAL:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           PLPPERSONAL:POL_YEAR     = SFPLOCATION:POL_YEAR ,
+           PLPPERSONAL:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           PLPPERSONAL:PREM_NO      = L_PREM_NO,
+           PLPPERSONAL:BUILD_NO     = L_BUILD_NO, Exact
+
+    access cppfarm,
+       set cppfarm:policy_no    = sfpmaster:policy_no,
+           cppfarm:pol_year     = sfpmaster:pol_year,
+           cppfarm:end_sequence = sfpmaster:end_sequence,
+           cppfarm:PREM_NO      = L_PREM_NO,
+           cppfarm:BUILD_NO     = L_BUILD_NO, Exact
+
+    Access scpcontractor,
+       Set scpcontractor:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           scpcontractor:POL_YEAR     = SFPLOCATION:POL_YEAR ,
+           scpcontractor:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           scpcontractor:PREM_NO      = L_PREM_NO,
+           scpcontractor:BUILD_NO     = L_BUILD_NO, Exact
+
+    access SCPCLASSCODE,
+       Set SCPCLASSCODE:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           scpclasscode:POL_YEAR     = SFPLOCATION:POL_YEAR ,
+           scpclasscode:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           scpclasscode:PREM_NO      = L_PREM_NO,
+           scpclasscode:BUILD_NO     = L_BUILD_NO, generic
+
+    Access BOPGENERAL,
+       Set BOPGENERAL:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           BOPGENERAL:POL_YEAR     = SFPLOCATION:POL_YEAR,
+           BOPGENERAL:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           BOPGENERAL:PREM_NO      = L_PREM_NO,
+           BOPGENERAL:BUILD_NO     = L_BUILD_NO, Exact
+
+    l_form = sfpmaster:form
+    access bpsdefault,
+       set bpsdefault:company_id       = l_company_id,
+           bpsdefault:line_of_business = sfplocation:line_of_business,
+           bpsdefault:form             = l_form, exact
+
+    access cppgeneral,
+       set cppgeneral:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           cppgeneral:POL_YEAR     = SFPLOCATION:POL_YEAR,
+           cppgeneral:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           cppgeneral:PREM_NO      = L_PREM_NO,
+           cppgeneral:BUILD_NO     = L_BUILD_NO, GENERIC
+
+    access cppbusiness,
+       set cppbusiness:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           cppbusiness:POL_YEAR     = SFPLOCATION:POL_YEAR,
+           cppbusiness:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           cppbusiness:PREM_NO      = L_PREM_NO,
+           cppbusiness:BUILD_NO     = L_BUILD_NO, GENERIC
+
+    access cppblanket,
+       set cppblanket:POLICY_NO    = cppgeneral:POLICY_NO,
+           cppblanket:POL_YEAR     = cppgeneral:POL_YEAR,
+           cppblanket:END_SEQUENCE = cppgeneral:END_SEQUENCE,
+           cppblanket:PREM_NO      = L_PREM_NO,
+           cppblanket:BUILD_NO     = L_BUILD_NO,
+           cppblanket:rate_type    = cppgeneral:rate_type, exact
+
+    access cppinland,
+       set cppinland:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           cppinland:POL_YEAR     = SFPLOCATION:POL_YEAR,
+           cppinland:END_SEQUENCE = SFPLOCATION:END_SEQUENCE,
+           cppinland:PREM_NO      = L_PREM_NO,
+           cppinland:BUILD_NO     = L_BUILD_NO, GENERIC
+
+    access cppliablimits,
+       set cppliablimits:POLICY_NO    = SFPLOCATION:POLICY_NO,
+           cppliablimits:POL_YEAR     = SFPLOCATION:POL_YEAR,
+           cppliablimits:END_SEQUENCE = SFPLOCATION:END_SEQUENCE, Exact
+
+
+    L_COMPANY_ID     = sfpname:company_id
+    L_LIABILITY_CODE = SFPMASTER:LIABILITY_CODE
+    Access aggregate_limit_loc,
+       Set aggregate_limit_loc:COMPANY_ID = L_COMPANY_ID,
+           aggregate_limit_loc:POLICY_NO  = SFPLOCATION:POLICY_NO,
+           aggregate_limit_loc:PREM_NO    = L_PREM_NO,
+           aggregate_limit_loc:BUILD_NO   = L_BUILD_NO, Exact
+
+    If aggregate_limit_loc:COMPANY_ID = L_COMPANY_ID and
+       aggregate_limit_loc:POLICY_NO  = SFPMASTER:POLICY_NO and
+       aggregate_limit_loc:PREM_NO    = L_PREM_NO and
+       aggregate_limit_loc:BUILD_NO   = L_BUILD_NO Then
+      {
+        switch (sfsline:LOB_CODE)
+          case "BOP"             : do change_aggregate_limit_loc
+          case "SCP"             : do change_scp_aggregate_limit_loc
+          case "SMP","PROPERTY"  : do change_SMP_aggregate_limit_loc    --smp
+          case "CINLAND"         : do change_CINLAND_aggregate_limit_loc  -- inland marine
+          case "FARMFIRE"        : do change_farm_aggregate_limit_loc
+        }
+      }
+    else
+      {
+        switch (sfsline:LOB_CODE)
+          case "BOP"             : do add_aggregate_limit_loc
+          case "SCP"             : do add_scp_aggregate_limit_loc
+          case "SMP","PROPERTY"  : do ADD_SMP_aggregate_limit_loc      --smp
+          case "CINLAND"         : do add_CINLAND_aggregate_limit_loc  -- inland marine
+          case "FARMFIRE"        : do add_FARM_aggregate_limit_loc     --farm fire
+        }
+      }
+    COUNTER = COUNTER + 1
+    Next SFPLOCATION
+  } -- end of while
+
+End -- end of procedure
+
+
+procedure access_bpsclass
+
+begin
+  l_eff_date1 = 00.00.0000
+  Access BPSCLASS,
+     Set BPSCLASS:COMPANY_ID       = bopGENERAL:COMPANY_ID ,
+         BPSCLASS:STATE            = bopGENERAL:STATE,
+         BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+         BPSCLASS:CLASS_CODE       = bopGENERAL:CLASS_CODE,
+         BPSCLASS:SUB_CODE         = bopGENERAL:SUB_CODE, Generic
+
+  while BPSCLASS:COMPANY_ID       = bopGENERAL:COMPANY_ID and
+        BPSCLASS:STATE            = bopGENERAL:STATE and
+        BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS and
+        BPSCLASS:CLASS_CODE       = bopGENERAL:CLASS_CODE and
+        BPSCLASS:SUB_CODE         = bopGENERAL:SUB_CODE
+    {
+      If BPSCLASS:EFF_DATE <= SFPNAME:eff_DATE Then
+        {
+          l_eff_date1 = BPSCLASS:eff_date
+        }
+      Next BPSCLASS
+    }
+
+
+  Access BPSCLASS,
+     Set BPSCLASS:COMPANY_ID       = bopGENERAL:COMPANY_ID ,
+         BPSCLASS:STATE            = bopGENERAL:STATE,
+         BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+         BPSCLASS:CLASS_CODE       = bopGENERAL:CLASS_CODE,
+         BPSCLASS:SUB_CODE         = bopGENERAL:SUB_CODE,
+         BPSCLASS:EFF_DATE         = L_EFF_DATE1,exACt
+End
+
+
+Procedure ADD_aggregate_limit_loc    --bop
+
+{
+  If BOPGENERAL:LOSS_INCOME_LIMIT = 0 Then
+    {
+      L_BUSINESS_INCOME = SFPLOCATION:BUSINESS_INCOME
+    }
+  Else
+    {
+      L_BUSINESS_INCOME = BOPGENERAL:LOSS_INCOME_LIMIT
+    }
+
+  do access_bpsclass
+
+
+/*  write("%c <014>bpsclass:company_id %x",01001,bpsclass:company_id)
+  write("%c bopgeneralcompany_id %x",01041,bopgeneral:company_id)
+  write("%c bpsclass:state %x",02001,bpsclass:state)
+  write("%c bopgeneral:state %x",02041,bopgeneral:state)
+  write("%c bpsclass:line_of_business %x",03001,bpsclass:line_of_business)
+  write("%c bopgeneral:LOB %x",03041,bopgeneral:line_of_business)
+  write("%c bsclass:class_code %x",04001,bpsclass:class_code)
+  write("%c bopgeneral:class_code %x",04041,bopgeneral:class_code)
+  write("%c bsclass:sub_code %x",05001,bpsclass:sub_code)
+  write("%c bopgeneral:sub_code %x",05041,bopgeneral:sub_code)
+  write("%c bsclass:eff_date %x",06001,bpsclass:eff_date)
+  write("%cl_eff_date %x",07041,l_eff_date1)
+  read("%c%S",12001,"press enter to continue",l_enter,1)
+*/
+
+  Add aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                     = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                      = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                       = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                   = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                        = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                       = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                        = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                           = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                      = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                       = SFPLOCATION:STR_ZIPCODe
+      aggregate_limit_loc:CONSTRUCTION_CODE              = BOPGENERAL:CONSTRUCTION
+      aggregate_limit_loc:CLASS_CODE                     = BOPGENERAL:CLASS_CODE
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION           = BOPGENERAL:CONSTRUCTION_YEAR
+      aggregate_limit_loc:SITE_LIMIT                     = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE                = 0
+      aggregate_limit_loc:BUILDING_VALUE                 = BOPGENERAL:BUILDING_LIMIT
+      aggregate_limit_loc:BUILDING_LIMIT                 = BOPGENERAL:BUILDING_LIMIT
+      aggregate_limit_loc:BUILDING_DEDUCTABLE            = SFPMASTER:DEDUCTIBLE
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE         = BOPGENERAL:OTHER_STRUCTURES
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT         = BOPGENERAL:OTHER_STRUCTURES
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE    = 0
+      aggregate_limit_loc:CONTENTS_VALUE                 = BOPGENERAL:PROPERTY_LIMIT
+      aggregate_limit_loc:CONTENTS_LIMIT                 = BOPGENERAL:PROPERTY_LIMIT
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE            = 0
+      aggregate_limit_loc:ALE_BI_VALUE                   = L_BUSINESS_INCOME
+      aggregate_limit_loc:ALE_BI_LIMIT                   = L_BUSINESS_INCOME
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE              = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM               = (((BOPGENERAL:LOCATION_PREMIUM - bopgeneral:boilers_premium) *
+                                                             ((sfpmaster:irpm divide 100) + 1)) + bopgeneral:boilers_premium) * (prsreinsplit:property)
+
+      AGGREGATE_LIMIT_LOC:SPRINKLERED                    = BOPGENERAL:SPRINKLERS
+      AGGREGATE_LIMIT_LOC:PROTECTION                     = BOPGENERAL:PROTECTION
+      aggregate_limit_loc:TRANS_DATE                     = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                      = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                     = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business               = sfpname:line_of_business
+
+      do get_prsmaster
+      aggregate_limit_loc:lob_subline     = l_lob_subline
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+
+      aggregate_limit_loc:agent_no                       = sfpname:agent_no
+      aggregate_limit_loc:county                         = bopgeneral:county
+      aggregate_limit_loc:LOSS_INCOME_LIMIT              = bopgeneral:loss_income_limit
+      aggregate_limit_loc:MONEY_LIMIT_ON                 = bopgeneral:money_limit_on
+      aggregate_limit_loc:AR_LIMIT                       = bopgeneral:ar_limit
+      aggregate_limit_loc:BUILDING_GLASS                 = bopgeneral:glass_limit
+      aggregate_limit_loc:CUSTOMER_PROP_LIMIT            = bopgeneral:customer_prop_limit
+      aggregate_limit_loc:UTILITY_LIMIT                  = bopgeneral:UTILITY_LIMIT
+      aggregate_limit_loc:MECHANICAL_LIMIT               = bopgeneral:MECHANICAL_LIMIT
+      aggregate_limit_loc:PERSONAL_EFFECTS               = bopgeneral:property_limit
+      aggregate_limit_loc:DEBRIS_REMOVAL                 = bpsdefault:debris_removal
+      aggregate_limit_loc:FIRE_DEPARTMENT_SERVICE_CHARGE = bpsdefault:fire_department
+      aggregate_limit_loc:FIRE_EXTINGUISHER              = bpsdefault:fire_extinguisher
+      aggregate_limit_loc:POLLUTION_LIMIT                = bopgeneral:pollution_limit
+      aggregate_limit_loc:TREES_SHRUBS                   = bpsdefault:trees_shrubs[1]
+      aggregate_limit_loc:VALUEABLE_PAPERS_LIMIT         = bopgeneral:valuable_papers_limit
+      aggregate_limit_loc:WATER_DAMAGE_LIMIT             = bopgeneral:water_backup_limit
+      aggregate_limit_loc:PEAK_SEASON                    = l_peak_season         --bu0281 peak season
+      aggregate_limit_loc:EMPLOYEE_DISHONESTY            = l_employee_dishoesty  --bu0282
+      aggregate_limit_loc:LOSS_ASSESSMENT_COVERAGE       = l_loss_accessment     --bu0283 loss assessment
+      aggregate_limit_loc:COMPUTER_COVERAGE              = l_comp_desc_limit     --bu0370
+      aggregate_limit_loc:INDOOR_GLASS                   = l_glass_limit         --bu0375
+      aggregate_limit_loc:GARAGEKEEPERS_COVERAGE         = l_garagekeepers       --bu1510
+      aggregate_limit_loc:square_footage                 = 0
+      aggregate_limit_loc:eff_date                       = sfpname:eff_date
+      aggregate_limit_loc:tier                           = 0
+      if bopgeneral:windstorm_exclusion one of 1 then
+        {
+          aggregate_limit_loc:exclude_wind               = "X"
+        }
+      else
+        {
+          aggregate_limit_loc:policy_type[2]             = 02
+          if bopgeneral:wind_deductible > 0 then
+            aggregate_limit_loc:hurricane_deductible           = bopgeneral:wind_deductible
+          else
+            aggregate_limit_loc:hurricane_deductible           = sfpmaster:deductible
+
+        }
+
+      aggregate_limit_loc:distance_to_shore              = sfplocation:distance_to_shore
+      AGGREGATE_LIMIT_LOC:no_of_stories                  = bopgeneral:stories
+      aggregate_limit_loc:CLASS_CODE_DESCRIPTION         = bpsclass:DESCRIPTION[1]
+      switch(bopgeneral:class_code)   --add per cindy RMS program  09/27/2013
+        case 2,30         : aggregate_limit_loc:occupancycode              = 2
+        case 80,22        : aggregate_limit_loc:occupancycode              = 47
+        case 64,167,26    : aggregate_limit_loc:occupancycode              = 6
+        case 51,70        : aggregate_limit_loc:occupancycode              = 8
+        case 41,54,58,62,25,37,5,77,9,34,19     : aggregate_limit_loc:occupancycode   = 5
+        case 2980,2981,5980,1980,4981,2985,4982 : aggregate_limit_loc:occupancycode   = 18
+        case 10           : aggregate_limit_loc:occupancycode              = 52
+        case 685,119,71   : aggregate_limit_loc:occupancycode              = 13
+        case 31           : aggregate_limit_loc:occupancycode              = 43
+        case 3,18,75      : aggregate_limit_loc:occupancycode              = 40
+        case 90           : aggregate_limit_loc:occupancycode              = 22
+        case 93           : aggregate_limit_loc:occupancycode              = 44
+        case 74           : aggregate_limit_loc:occupancycode              = 37
+        case 87,746,3980  : aggregate_limit_loc:occupancycode              = 23
+        case 106,310      : aggregate_limit_loc:occupancycode              = 39
+        default           : aggregate_limit_loc:occupancycode              = 0
+      end
+    End
+}
+
+Procedure ADD_FARM_aggregate_limit_loc
+
+{
+  Add aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE           = 0
+      aggregate_limit_loc:CLASS_CODE                  = 0
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = cppfarm:coverage_a_LIMIT
+      aggregate_limit_loc:BUILDING_LIMIT              = cppfarm:coverage_a_limit
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppfarm:DEDUCTIBLE
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = cppfarm:coverage_b_limit
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = cppfarm:coverage_b_limit
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = cppfarm:coverage_c_limit
+      aggregate_limit_loc:CONTENTS_LIMIT              = cppfarm:coverage_c_limit
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = 0
+      aggregate_limit_loc:ALE_BI_VALUE                = cppfarm:coverage_d_limit --coverage d
+      aggregate_limit_loc:ALE_BI_LIMIT                = cppfarm:coverage_d_limit
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      AGGREGATE_LIMIT_LOC:SPRINKLERED                 = "0"
+      AGGREGATE_LIMIT_LOC:PROTECTION                  = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = SFPMASTER:TOTAL[17]
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+      do get_prsmaster
+      aggregate_limit_loc:lob_subline     = l_lob_subline
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = cppfarm:county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:hurricane_deductible        = 0
+      aggregate_limit_loc:exclude_wind                = ""
+      aggregate_limit_loc:occupancycode               = 0
+    End
+}
+
+Procedure change_scp_aggregate_limit_loc
+
+{
+  l_eff_date1 = 00.00.0000
+  l_company_id = sfpname:company_id
+  l_state = scpcontractor:state
+  l_lob = sfpname:line_of_business
+  l_class_code = 0
+  l_class_code_description = ""
+
+  do access_scsclasscode
+
+  change aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE           = SCPCONTRACTOR:CONSTRUCTION
+      if scpclasscode:class_code = 0 then
+        {
+          do access_scpadditionalclass
+        }
+      aggregate_limit_loc:CLASS_CODE                  = l_class_code
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = SCPCONTRACTOR:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = SCPCONTRACTOR:building_LIMIT
+      aggregate_limit_loc:BUILDING_LIMIT              = SCPCONTRACTOR:building_LIMIT
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = SCPCONTRACTOR:DEDUCTIBLE
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = scpcontractor:PERSONAL_LIMIT + scpcontractor:property_limit
+      aggregate_limit_loc:CONTENTS_LIMIT              = scpcontractor:PERSONAL_LIMIT + scpcontractor:property_limit
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = 0
+      aggregate_limit_loc:ALE_BI_VALUE                = SCPCONTRACTOR:LOSS_LIMIT  --coverage d
+      aggregate_limit_loc:ALE_BI_LIMIT                = SCPCONTRACTOR:LOSS_LIMIT
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = scpcontractor:property_total
+      AGGREGATE_LIMIT_LOC:PROTECTION                  = SCPCONTRACTOR:PROTECTION
+      AGGREGATE_LIMIT_LOC:SPRINKLERED                 = "0"
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+
+      do get_prsmaster
+      if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+       {
+        aggregate_limit_loc:lob_subline     = l_lob_subline
+       }
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      if scpcontractor:property_limit = 0 and
+         scpcontractor:personal_limit = 0 then
+       {
+        aggregate_limit_loc:exclude_wind              = ""
+        aggregate_limit_loc:policy_type[2]            = 00
+       }
+
+      if aggregate_limit_loc:contents_limit <> 0 and
+          scpcontractor:wind_deductible = 0 then
+       {
+         aggregate_limit_loc:hurricane_deductible     = scpcontractor:deductible
+         aggregate_limit_loc:policy_type[2]           = 02
+       }
+       else
+        if aggregate_limit_loc:contents_limit <> 0 and
+          scpcontractor:wind_deductible <> 0 then
+       {
+        aggregate_limit_loc:hurricane_deductible      = scpcontractor:wind_deductible
+        aggregate_limit_loc:policy_type[2]            = 02
+       }
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = scpcontractor:county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:no_of_stories               = cppgeneral:stories
+      aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+      aggregate_limit_loc:class_code_description      = l_class_code_description
+      switch(l_class_code)
+        case 2984                                              : aggregate_limit_loc:occupancycode = 5
+        case 2981,19820,983,6982,2980,5980,4981,1980,1985,3981 : aggregate_limit_loc:occupancycode = 18
+        case 3980,39801,1984                                   : aggregate_limit_loc:occupancycode = 23
+        case 1167                                              : aggregate_limit_loc:occupancycode = 39
+        default : aggregate_limit_loc:occupancycode = 0
+      end
+
+    End
+}
+
+procedure get_optional_coverages
+
+BEGIN
+  Access cppPROPERTY,
+     Set cppPROPERTY:policy_NO    = cppGENERAL:policy_NO,
+         cppproperty:pol_year     = cppgeneral:pol_year,
+         cppproperty:end_sequence = cppgeneral:end_sequence,
+         cppPROPERTY:PREM_NO      = cppGENERAL:PREM_NO,
+         cppPROPERTY:BUILD_NO     = cppGENERAL:BUILD_NO, Generic
+
+L_OPTIONAL_COVERAGES = cppPROPERTY:AR_PREM +
+                       cppPROPERTY:INFLATION_PREMIUM[1] +
+                       cppPROPERTY:PEAK_SEASON_PREM +
+                       cppPROPERTY:GLASS_PREM +
+                       cppPROPERTY:SIGNS_ATTACHED_PREM +
+                       cppPROPERTY:SIGNS_NOT_ATTACHED_PREM +
+                       cppPROPERTY:BUILDING_CODE_PREM +
+                       cppPROPERTY:LOSS_UTILITY_PREM +
+                       cppPROPERTY:MECHANICAL_BREAKDOWN_PREM +
+                       cppPROPERTY:DEBRIS_REMOVAL_PREM +
+                       cppPROPERTY:OFF_PREM_OTHER_LOC_PREM +
+                       cppPROPERTY:OFF_PREM_IN_TRANSIT_PREM +
+                       cppPROPERTY:OUTDOOR_PROPERTY_PREM +
+                       cppPROPERTY:PERSONAL_EFFECTS_PREM +
+                       cppPROPERTY:PERSONAL_PROPERTY_OTHER_PREM +
+                       cppPROPERTY:VALUABLE_PAPERS_PREM +
+                       cppPROPERTY:PRECIOUS_METALS_PREM +
+                       cppPROPERTY:WATER_BACKUP_PREMIUM +
+                       cppproperty:loss_assessment_prem
+END
+
+procedure get_endorsment_premium
+
+BEGIN
+  Access sfpEND,
+     Set sfpEND:policy_NO    = cppGENERAL:policy_NO,
+         sfpend:pol_year     = cppgeneral:pol_year,
+         sfpend:end_sequence = cppgeneral:end_sequence,
+         sfpEND:PREM_NO      = cppGENERAL:PREM_NO,
+         sfpEND:BUILD_NO     = cppGENERAL:BUILD_NO, Generic
+
+L_SUPPLEMENTAL_PREMIUM = 0
+While sfpEND:policy_NO    = cppGENERAL:policy_NO And
+      sfpend:pol_year     = cppgeneral:pol_year and
+      sfpend:end_sequence = cppgeneral:end_sequence and
+      sfpEND:PREM_NO      = cppGENERAL:PREM_NO And
+      sfpEND:BUILD_NO     = cppGENERAL:BUILD_NO
+  Begin
+    If sfpEND:LOB_END_CODE = "P" Then
+      Begin
+        L_SUPPLEMENTAL_PREMIUM = L_SUPPLEMENTAL_PREMIUM + sfpEND:MANUAL_PREMIUM
+      End
+    Next sfpEND
+  End
+END
+
+Procedure get_miscellaneous
+
+BEGIN
+  Access sfpMISC,
+     Set sfpMISC:policy_NO    = cppgeneral:policy_NO,
+         sfpmisc:pol_Year     = cppgeneral:pol_Year,
+         sfpmisc:end_sequence = cppgeneral:end_sequence, Generic
+
+L_MISC_PREMIUM = 0
+If L_MISC <> "Y" Then
+  Begin
+    While sfpMISC:policy_NO    = cppgeneral:policy_NO and
+          sfpmisc:pol_year     = cppgeneral:pol_year and
+          sfpmisc:end_sequence = cppgeneral:end_sequence
+      Begin
+        If sfpMISC:LOB_END_CODE = "P" Then
+          Begin
+            L_MISC_PREMIUM = L_MISC_PREMIUM + sfpMISC:PREMIUM
+            L_MISC = "Y"
+          End
+        Next sfpMISC
+      End
+  End
+END
+
+Procedure compute_business_income
+
+BEGIN
+  l_cpp_business_income = 0
+  l_cpp_business_income = cppbusiness:total_premium - cppbusiness:boiler_premium
+  l_cpp_business_income_limit = cppbusiness:limit
+END
+
+procedure calculate_prop_premium
+
+BEGIN
+ l_property_premium = 0
+ l_property_premium = l_property_premium + (cppgeneral:total_premium[1] + cppproperty:boiler_premium[1]) +
+                                           (cppgeneral:total_premium[2] + cppproperty:boiler_premium[2]) +
+                                           L_MISC_PREMIUM +
+                                           l_supplemental_premium +
+                                           l_optional_coverages  +
+                                           l_cpp_business_income
+END
+
+/*
+procedure access_cpstransitional
+
+BEGIN
+  l_company_id = sfpname:company_id
+  l_lob        = sfpname:line_of_business
+
+  Access CPSTRANSITIONAL,
+     Set CPSTRANSITIONAL:COMPANY_ID       = l_COMPANY_ID,
+         CPSTRANSITIONAL:STATE            = cppGENERAL:STATE,
+         CPSTRANSITIONAL:LINE_OF_BUSINESS = l_lob,
+         CPSTRANSITIONAL:GROUP_NO         = cppGENERAL:GROUP_NO,
+         CPSTRANSITIONAL:SUB_GROUP        = cppGENERAL:SUB_GROUP ,
+         CPSTRANSITIONAL:CLASS_CODE       = cppGENERAL:CLASS_CODE,
+         CPSTRANSITIONAL:SUB_CODE         = cppGENERal:SUB_CODE, Generic
+
+  While CPSTRANSITIONAL:COMPANY_ID       = l_COMPANY_ID And
+        CPSTRANSITIONAL:STATE            = cppGENERAL:STATE And
+        CPSTRANSITIONAL:LINE_OF_BUSINESS = l_lob And
+        CPSTRANSITIONAL:GROUP_NO         = cppGENERAL:GROUP_NO And
+        CPSTRANSITIONAL:SUB_GROUP        = cppGENERAL:SUB_GROUP And
+        CPSTRANSITIONAL:CLASS_CODE       = cppGENERAL:CLASS_CODE And
+        CPSTRANSITIONAL:SUB_CODE         = cppGENERAL:SUB_CODE
+    {
+      If cpstransitional:EFF_DATE <= SFPNAME:eff_DATE Then
+        {
+          l_eff_date1 = CPSTRANSITIONAL:eff_date
+        }
+      Next CPSTRANSITIONAL
+    }
+  Access CPSTRANSITIONAL,
+     Set CPSTRANSITIONAL:COMPANY_ID       = l_COMPANY_ID,
+         CPSTRANSITIONAL:STATE            = cppGENERAL:STATE,
+         CPSTRANSITIONAL:LINE_OF_BUSINESS = l_lob,
+         CPSTRANSITIONAL:GROUP_NO         = cppGENERAL:GROUP_NO,
+         CPSTRANSITIONAL:SUB_GROUP        = cppGENERAL:SUB_GROUP ,
+         CPSTRANSITIONAL:CLASS_CODE       = cppGENERAL:CLASS_CODE,
+         CPSTRANSITIONAL:SUB_CODE         = cppGENERal:SUB_CODE,
+         cpstransitional:eff_date         = l_eff_date1, exact
+END
+*/
+
+Procedure ADD_SMP_aggregate_limit_loc
+
+{
+  do get_optional_coverages
+  do get_endorsment_premium
+  do get_miscellaneous
+  do compute_business_income
+  do calculate_prop_premium
+
+--  do access_cpstransitional
+
+  access cppexclusions,
+     set cppexclusions:policy_no    = cppgeneral:policy_no,
+         cppexclusions:pol_year     = cppgeneral:pol_year,
+         cppexclusions:end_sequence = cppgeneral:end_sequence,
+         cppexclusions:prem_no      = cppgeneral:prem_no,
+         cppexclusions:build_no     = cppgeneral:build_no,
+         cppexclusions:rate_type    = cppgeneral:rate_type, exact
+
+  if cppgeneral:blanket = 1 Then
+    {
+      Add aggregate_limit_loc
+        Begin
+          aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+          aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+          aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+          aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+          aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+          aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+          aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+          aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+          aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+          aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+          aggregate_limit_loc:CONSTRUCTION_CODE           = cppgeneral:CONSTRUCTION
+          aggregate_limit_loc:CLASS_CODE                  = cppgeneral:class_code
+          aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+          aggregate_limit_loc:SITE_LIMIT                  = 0
+          aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+          aggregate_limit_loc:BUILDING_VALUE              = cppblanket:LIMIT[1]
+          aggregate_limit_loc:BUILDING_LIMIT              = cppblanket:LIMIT[1]
+          aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppgeneral:deductible
+          aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+          aggregate_limit_loc:CONTENTS_VALUE              = cppblanket:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_LIMIT              = cppblanket:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_DEDUCTABLE         = cppgeneral:contents_deductible
+          aggregate_limit_loc:ALE_BI_VALUE                = 0
+          aggregate_limit_loc:ALE_BI_LIMIT                = l_cpp_business_income_limit
+          aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+          AGGREGATE_LIMIT_LOC:SPRINKLERED                 = str(CPPGENERAL:SPRINKLERED)
+          AGGREGATE_LIMIT_LOC:PROTECTION                  = CPPGENERAL:PROTECTION
+
+          aggregate_limit_loc:PROPERTY_PREMIUM            = l_property_premium
+          aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+          aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+          aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+          aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+          if cppexclusions:exclude_wind_hail one of 1 then
+            {
+              aggregate_limit_loc:exclude_wind                = "X"
+            }
+          else
+           if cppgeneral:policy_no = 0 then
+            {
+              aggregate_limit_loc:exclude_wind                = "X"
+            }
+           else
+            {
+              aggregate_limit_loc:exclude_wind                = ""
+              aggregate_limit_loc:policy_type[2]              = 02
+              if cppgeneral:wind_deductible > 0 then
+                aggregate_limit_loc:hurricane_deductible        = cppgeneral:wind_deductible
+              else
+                aggregate_limit_loc:hurricane_deductible        = cppgeneral:deductible
+            }
+
+          do get_prsmaster
+          aggregate_limit_loc:lob_subline     = l_lob_subline
+          aggregate_limit_loc:policy_type[5]  = l_policy_type5
+          aggregate_limit_loc:policy_type[6]  = l_policy_type6
+          aggregate_limit_loc:terrorism       = l_terr
+          aggregate_limit_loc:lob_subline                 = prsmaster:lob_subline
+          aggregate_limit_loc:agent_no                    = sfpname:agent_no
+          aggregate_limit_loc:county                      = cppgeneral:county
+          aggregate_limit_loc:square_footage              = 0
+          aggregate_limit_loc:eff_date                    = sfpname:eff_date
+          aggregate_limit_loc:tier                        = 0
+          aggregate_limit_loc:no_of_stories               = cppgeneral:stories
+          aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+          aggregate_limit_loc:blanket                     = cppgeneral:blanket
+          aggregate_limit_loc:class_code_description      = cppgeneral:description
+          AGGREGATE_LIMIT_LOC:SPRINKLERED                 = str(CPPGENERAL:SPRINKLERED)
+          AGGREGATE_LIMIT_LOC:PROTECTION                  = CPPGENERAL:PROTECTION
+          switch(cppgeneral:class_code)
+            case 2,30,31      : aggregate_limit_loc:occupancycode              = 2
+            case 80,22        : aggregate_limit_loc:occupancycode              = 47
+            case 64           : aggregate_limit_loc:occupancycode              = 6
+            case 51,70        : aggregate_limit_loc:occupancycode              = 8
+            case 41,54,58,62,53  : aggregate_limit_loc:occupancycode           = 5
+            case 2980,2981,5980,1980,4981,2985,4982,166 : aggregate_limit_loc:occupancycode   = 18
+            case 10           : aggregate_limit_loc:occupancycode              = 52
+            case 685          : aggregate_limit_loc:occupancycode              = 13
+            case 96           : aggregate_limit_loc:occupancycode              = 11
+            case 3,18         : aggregate_limit_loc:occupancycode              = 40
+            case 90           : aggregate_limit_loc:occupancycode              = 22
+            case 93           : aggregate_limit_loc:occupancycode              = 44
+            case 74,32,281    : aggregate_limit_loc:occupancycode              = 37
+            case 746,3980     : aggregate_limit_loc:occupancycode              = 23
+            case 119          : aggregate_limit_loc:occupancycode              = 38
+            case 167          : aggregate_limit_loc:occupancycode              = 5
+            case 87           : aggregate_limit_loc:occupancycode              = 5
+            case 106,310      : aggregate_limit_loc:occupancycode              = 39
+            case 56           : aggregate_limit_loc:occupancycode              = 5
+            case 75           : aggregate_limit_loc:occupancycode              = 52
+          end
+        End
+    }
+  else
+    {
+      Add aggregate_limit_loc
+        Begin
+          aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+          aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+          aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+          aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+          aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+          aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+          aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+          aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+          aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+          aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+          aggregate_limit_loc:CONSTRUCTION_CODE           = cppgeneral:CONSTRUCTION
+          aggregate_limit_loc:CLASS_CODE                  = cppgeneral:class_code
+          aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+          aggregate_limit_loc:SITE_LIMIT                  = 0
+          aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+          aggregate_limit_loc:BUILDING_VALUE              = cppgeneral:LIMIT[1]
+          aggregate_limit_loc:BUILDING_LIMIT              = cppgeneral:LIMIT[1]
+          aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppgeneral:deductible
+          aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+          aggregate_limit_loc:CONTENTS_VALUE              = cppgeneral:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_LIMIT              = cppgeneral:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_DEDUCTABLE         = cppgeneral:contents_deductible
+          aggregate_limit_loc:ALE_BI_VALUE                = 0
+          aggregate_limit_loc:ALE_BI_LIMIT                = l_cpp_business_income_limit
+          aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+          aggregate_limit_loc:PROPERTY_PREMIUM            = l_property_premium
+          aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+          aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+          aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+          aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+          AGGREGATE_LIMIT_LOC:SPRINKLERED                 = str(CPPGENERAL:SPRINKLERED)
+          AGGREGATE_LIMIT_LOC:PROTECTION                  = CPPGENERAL:PROTECTION
+
+          if cppexclusions:exclude_wind_hail one of 1 then
+            {
+              aggregate_limit_loc:exclude_wind                = "X"
+            }
+          else
+           if cppgeneral:policy_no = 0 then
+            {
+              aggregate_limit_loc:exclude_wind                = "X"
+            }
+           else
+            {
+              aggregate_limit_loc:exclude_wind                = ""
+              aggregate_limit_loc:policy_type[2]              = 02
+              if cppgeneral:wind_deductible > 0 then
+                aggregate_limit_loc:hurricane_deductible        = cppgeneral:wind_deductible
+              else
+                aggregate_limit_loc:hurricane_deductible        = cppgeneral:deductible
+            }
+
+          do get_prsmaster
+          aggregate_limit_loc:lob_subline     = l_lob_subline
+          aggregate_limit_loc:policy_type[5]  = l_policy_type5
+          aggregate_limit_loc:policy_type[6]  = l_policy_type6
+          aggregate_limit_loc:terrorism       = l_terr
+          aggregate_limit_loc:lob_subline                 = prsmaster:lob_subline
+          aggregate_limit_loc:agent_no                    = sfpname:agent_no
+          aggregate_limit_loc:county                      = cppgeneral:county
+          aggregate_limit_loc:square_footage              = 0
+          aggregate_limit_loc:eff_date                    = sfpname:eff_date
+          aggregate_limit_loc:tier                        = 0
+          aggregate_limit_loc:no_of_stories               = cppgeneral:stories
+          aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+          aggregate_limit_loc:blanket                     = cppgeneral:blanket
+          aggregate_limit_loc:class_code_description      = cppgeneral:description
+          switch(cppgeneral:class_code)
+            case 2,30,31      : aggregate_limit_loc:occupancycode              = 2
+            case 80,22        : aggregate_limit_loc:occupancycode              = 47
+            case 64           : aggregate_limit_loc:occupancycode              = 6
+            case 51,70        : aggregate_limit_loc:occupancycode              = 8
+            case 41,54,58,62,53  : aggregate_limit_loc:occupancycode           = 5
+            case 2980,2981,5980,1980,4981,2985,4982,166 : aggregate_limit_loc:occupancycode   = 18
+            case 10           : aggregate_limit_loc:occupancycode              = 52
+            case 685          : aggregate_limit_loc:occupancycode              = 13
+            case 96           : aggregate_limit_loc:occupancycode              = 11
+            case 3,18         : aggregate_limit_loc:occupancycode              = 40
+            case 90           : aggregate_limit_loc:occupancycode              = 22
+            case 93           : aggregate_limit_loc:occupancycode              = 44
+            case 74,32,281    : aggregate_limit_loc:occupancycode              = 37
+            case 746,3980     : aggregate_limit_loc:occupancycode              = 23
+            case 119          : aggregate_limit_loc:occupancycode              = 38
+            case 167          : aggregate_limit_loc:occupancycode              = 5
+            case 87           : aggregate_limit_loc:occupancycode              = 5
+            case 106,310      : aggregate_limit_loc:occupancycode              = 39
+            case 56           : aggregate_limit_loc:occupancycode              = 5
+            case 75           : aggregate_limit_loc:occupancycode              = 52
+          end
+        End
+    }
+}
+
+procedure access_scsclasscode
+
+begin
+  access scpclasscode,
+     set scpclasscode:policy_no    = scpcontractor:policy_no,
+         scpclasscode:pol_Year     = scpcontractor:pol_year,
+         scpclasscode:end_sequence = scpcontractor:end_sequence,
+         scpclasscode:prem_no      = scpcontractor:prem_no,
+         scpclasscode:build_no     = scpcontractor:build_no, generic
+
+  Access SCSCLASSCODE,
+     Set SCSCLASSCODE:COMPANY_ID       = l_COMPANY_ID,
+         SCSCLASSCODE:STATE            = l_state,
+         SCSCLASSCODE:LINE_OF_BUSINESS = l_lob,
+         SCSCLASSCODE:CLASS_CODE       = scpCLASSCODE:CLASS_CODE, generic
+
+  while SCSCLASSCODE:COMPANY_ID       = l_COMPANY_ID and
+        SCSCLASSCODE:STATE            = L_STATE and
+        SCSCLASSCODE:LINE_OF_BUSINESS = l_lob and
+        SCSCLASSCODE:CLASS_CODE       = scpCLASSCODE:CLASS_CODE
+    begin
+      If SCSCLASSCODE:EFF_DATE <= sfpname:eff_date Then
+        {
+          l_eff_date1 = scsclasscode:eff_date
+        }
+      Next SCSCLASSCODE
+    End
+
+  Access SCSCLASSCODE,
+     Set SCSCLASSCODE:COMPANY_ID       = l_COMPANY_ID,
+         SCSCLASSCODE:STATE            = L_STATE,
+         SCSCLASSCODE:LINE_OF_BUSINESS = l_lob,
+         SCSCLASSCODE:CLASS_CODE       = scpCLASSCODE:CLASS_CODE,
+         scsclasscode:eff_date         = l_eff_date1, exact
+  l_class_code             = scpCLASSCODE:CLASS_CODE
+  l_class_code_description = scsclasscode:description
+end
+
+procedure access_scpadditionalclass
+
+begin
+  Access scpadditionalCLASS,
+     Set scpadditionalclass:policy_NO    = scpcontractor:policy_no,
+         scpadditionalclass:pol_year     = scpcontractor:pol_year,
+         scpadditionalclass:end_sequence = scpcontractor:end_sequence,
+         scpadditionalclass:PREM_NO      = scpcontractor:prem_no,
+         scpadditionalclass:BUILD_NO     = scpcontractor:build_no, generic
+
+  l_class_code             = scpadditionalclass:class_code
+  l_class_code_description = scpadditionalclass:description
+end
+
+
+Procedure ADD_scp_aggregate_limit_loc
+
+{
+  l_eff_date1 = 00.00.0000
+  l_company_id = sfpname:company_id
+  l_state = scpcontractor:state
+  l_lob = sfpname:line_of_business
+  l_class_code = 0
+  l_class_code_description = ""
+
+  do access_scsclasscode
+
+  Add aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE           = SCPCONTRACTOR:CONSTRUCTION
+      if scpclasscode:class_code = 0 then
+        {
+          do access_scpadditionalclass
+        }
+      aggregate_limit_loc:CLASS_CODE                  = l_class_code
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = SCPCONTRACTOR:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = SCPCONTRACTOR:building_LIMIT
+      aggregate_limit_loc:BUILDING_LIMIT              = SCPCONTRACTOR:building_LIMIT
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = SCPCONTRACTOR:DEDUCTIBLE
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = scpcontractor:PERSONAL_LIMIT + scpcontractor:property_limit
+      aggregate_limit_loc:CONTENTS_LIMIT              = scpcontractor:PERSONAL_LIMIT + scpcontractor:property_limit
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = 0
+      aggregate_limit_loc:ALE_BI_VALUE                = SCPCONTRACTOR:LOSS_LIMIT  --coverage d
+      aggregate_limit_loc:ALE_BI_LIMIT                = SCPCONTRACTOR:LOSS_LIMIT
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = scpcontractor:property_total
+      AGGREGATE_LIMIT_LOC:SPRINKLERED                 = "0"
+      AGGREGATE_LIMIT_LOC:PROTECTION                  = SCPCONTRACTOR:PROTECTION
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+      do get_prsmaster
+      aggregate_limit_loc:lob_subline     = l_lob_subline
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = scpcontractor:county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:no_of_stories               = scpcontractor:stories
+      aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+      aggregate_limit_loc:class_code_description      = l_class_code_description      --scsclasscode:description
+      switch(l_class_code)
+        case 2984                                              : aggregate_limit_loc:occupancycode = 5
+        case 2981,19820,983,6982,2980,5980,4981,1980,1985,3981 : aggregate_limit_loc:occupancycode = 18
+        case 3980,39801,1984                                   : aggregate_limit_loc:occupancycode = 23
+        case 1167                                              : aggregate_limit_loc:occupancycode = 39
+        default : aggregate_limit_loc:occupancycode = 0
+      end
+
+      if scpcontractor:property_limit = 0 and
+         scpcontractor:personal_limit = 0 then
+       {
+        aggregate_limit_loc:exclude_wind              = ""
+        aggregate_limit_loc:policy_type[2]            = 00
+       }
+
+      if aggregate_limit_loc:contents_limit <> 0 and
+          scpcontractor:wind_deductible = 0 then
+       {
+         aggregate_limit_loc:hurricane_deductible     = scpcontractor:deductible
+         aggregate_limit_loc:policy_type[2]           = 02
+       }
+       else
+        if aggregate_limit_loc:contents_limit <> 0 and
+          scpcontractor:wind_deductible <> 0 then
+       {
+        aggregate_limit_loc:hurricane_deductible      = scpcontractor:wind_deductible
+        aggregate_limit_loc:policy_type[2]            = 02
+       }
+
+    End
+
+}
+
+Procedure ADD_cinland_aggregate_limit_loc
+
+{
+  l_cinland_contents = 0
+  l_cppendorse_building_limit = 0
+  l_cinland_property_premium = 0
+
+  l_county = cppinland:county
+
+  while cppinland:POLICY_NO    = SFPLOCATION:POLICY_NO and
+        cppinland:POL_YEAR     = SFPLOCATION:POL_YEAR and
+        cppinland:END_SEQUENCE = SFPLOCATION:END_SEQUENCE and
+        cppinland:PREM_NO      = L_PREM_NO and
+        cppinland:BUILD_NO     = L_BUILD_NO
+    {
+
+      if cppinland:code one of "MIM131","MIM112" then
+        {
+          access cppendorse,
+             set cppendorse:POLICY_NO    = cppinland:POLICY_NO,
+                 cppendorse:POL_YEAR     = cppinland:POL_YEAR,
+                 cppendorse:END_SEQUENCE = cppinland:END_SEQUENCE,
+                 cppendorse:PREM_NO      = l_PREM_NO,
+                 cppendorse:BUILD_NO     = l_BUILD_NO,
+                 cppendorse:code         = cppinland:code, generic
+
+          while cppendorse:POLICY_NO    = cppinland:POLICY_NO and
+                cppendorse:POL_YEAR     = cppinland:POL_YEAR and
+                cppendorse:END_SEQUENCE = cppinland:END_SEQUENCE and
+                cppendorse:PREM_NO      = l_PREM_NO and
+                cppendorse:BUILD_NO     = l_BUILD_NO and
+                cppendorse:code         = cppinland:code
+            {
+              if cppendorse:code one of "MIM131" then
+                {
+                  l_cppendorse_building_limit = l_cppendorse_building_limit + cppendorse:limit[1]
+                  l_building_deductible = cppendorse:deductible[1]
+                  l_cinland_property_premium = l_cinland_property_premium + cppendorse:premium[1]
+                }
+              if cppendorse:code one of "MIM112" then
+                {
+                  l_cinland_contents = l_cinland_contents + cppendorse:limit[1]
+                  l_contents_deductible = cppendorse:deductible[1]
+                }
+              next cppendorse
+            }
+        }
+      if cppinland:code one of "MIM121" then
+        {
+          access cppdesc,
+             set cppdesc:POLICY_NO    = cppinland:POLICY_NO,
+                 cppdesc:POL_YEAR     = cppinland:POL_YEAR,
+                 cppdesc:END_SEQUENCE = cppinland:END_SEQUENCE,
+                 cppdesc:PREM_NO      = cppinland:PREM_NO,
+                 cppdesc:BUILD_NO     = cppinland:BUILD_NO,
+                 cppdesc:code         = cppinland:code, generic
+
+          while  cppdesc:POLICY_NO    = cppinland:POLICY_NO and
+                 cppdesc:POL_YEAR     = cppinland:POL_YEAR and
+                 cppdesc:END_SEQUENCE = cppinland:END_SEQUENCE and
+                 cppdesc:PREM_NO      = cppinland:PREM_NO and
+                 cppdesc:BUILD_NO     = cppinland:BUILD_NO and
+                 cppdesc:code         = cppinland:code
+            {
+              l_cinland_contents = l_cinland_contents + cppdesc:limit
+              next cppdesc
+            }
+        }
+      next cppinland
+    }
+
+  Add aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE           = 0
+      aggregate_limit_loc:CLASS_CODE                  = 0
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = l_cppendorse_building_limit
+      aggregate_limit_loc:BUILDING_LIMIT              = l_cppendorse_building_limit
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = l_cinland_contents
+      aggregate_limit_loc:CONTENTS_LIMIT              = l_cinland_contents
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = 0
+      aggregate_limit_loc:ALE_BI_VALUE                = 0
+      aggregate_limit_loc:ALE_BI_LIMIT                = 0
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = l_cinland_property_premium  --was sfpmaster:total[6]
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+      do get_prsmaster
+      aggregate_limit_loc:lob_subline     = l_lob_subline
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = l_county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:hurricane_deductible        = 0
+      aggregate_limit_loc:exclude_wind                = ""
+      aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+      aggregate_limit_loc:occupancycode               = 0
+    End
+}
+
+
+Procedure Change_cinland_aggregate_limit_loc
+
+{
+  l_cinland_contents = 0
+  l_cppendorse_building_limit = 0
+  l_cinland_property_premium = 0
+
+  l_county = cppinland:county
+
+  while cppinland:POLICY_NO    = SFPLOCATION:POLICY_NO and
+        cppinland:POL_YEAR     = SFPLOCATION:POL_YEAR and
+        cppinland:END_SEQUENCE = SFPLOCATION:END_SEQUENCE and
+        cppinland:PREM_NO      = L_PREM_NO and
+        cppinland:BUILD_NO     = L_BUILD_NO
+    {
+      if cppinland:code one of "MIM131","MIM112" then
+        {
+          access cppendorse,
+             set cppendorse:POLICY_NO    = cppinland:POLICY_NO,
+                 cppendorse:POL_YEAR     = cppinland:POL_YEAR,
+                 cppendorse:END_SEQUENCE = cppinland:END_SEQUENCE,
+                 cppendorse:PREM_NO      = cppinland:PREM_NO,
+                 cppendorse:BUILD_NO     = cppinland:BUILD_NO,
+                 cppendorse:code         = cppinland:code, generic
+
+          while cppendorse:POLICY_NO    = cppinland:POLICY_NO and
+                cppendorse:POL_YEAR     = cppinland:POL_YEAR and
+                cppendorse:END_SEQUENCE = cppinland:END_SEQUENCE and
+                cppendorse:PREM_NO      = cppinland:PREM_NO and
+                cppendorse:BUILD_NO     = cppinland:BUILD_NO and
+                cppendorse:code         = cppinland:code
+            {
+              if cppendorse:code one of "MIM131" then
+                {
+                  l_cinland_property_premium = l_cinland_property_premium + cppendorse:premium[1]
+                  l_cppendorse_building_limit = l_cppendorse_building_limit + cppendorse:limit[1]
+                  l_building_deductible = cppendorse:deductible[1]
+                }
+              if cppendorse:code one of "MIM112" then
+                {
+                  l_cinland_contents = l_cinland_contents + cppendorse:limit[1]
+                  l_contents_deductible = cppendorse:deductible[1]
+                }
+              next cppendorse
+            }
+        }
+      if cppinland:code one of "MIM121" then
+        {
+          access cppdesc,
+             set cppdesc:POLICY_NO    = cppinland:POLICY_NO,
+                 cppdesc:POL_YEAR     = cppinland:POL_YEAR,
+                 cppdesc:END_SEQUENCE = cppinland:END_SEQUENCE,
+                 cppdesc:PREM_NO      = cppinland:PREM_NO,
+                 cppdesc:BUILD_NO     = cppinland:BUILD_NO,
+                 cppdesc:code         = cppinland:code, generic
+
+          while  cppdesc:POLICY_NO    = cppinland:POLICY_NO and
+                 cppdesc:POL_YEAR     = cppinland:POL_YEAR and
+                 cppdesc:END_SEQUENCE = cppinland:END_SEQUENCE and
+                 cppdesc:PREM_NO      = cppinland:PREM_NO and
+                 cppdesc:BUILD_NO     = cppinland:BUILD_NO and
+                 cppdesc:code         = cppinland:code
+            {
+              l_cinland_contents = l_cinland_contents + cppdesc:limit
+              next cppdesc
+            }
+        }
+      next cppinland
+    }
+
+  change aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE           = 0
+      aggregate_limit_loc:CLASS_CODE                  = 0
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = l_cppendorse_building_limit
+      aggregate_limit_loc:BUILDING_LIMIT              = l_cppendorse_building_limit
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = l_cinland_contents
+      aggregate_limit_loc:CONTENTS_LIMIT              = l_cinland_contents
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = 0
+      aggregate_limit_loc:ALE_BI_VALUE                = 0
+      aggregate_limit_loc:ALE_BI_LIMIT                = 0
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = SFPMASTER:TOTAL[6]  --inland premium
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+      do get_prsmaster
+      if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+       {
+        aggregate_limit_loc:lob_subline     = l_lob_subline
+       }
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = l_county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:hurricane_deductible             = 0
+      aggregate_limit_loc:exclude_wind                = ""
+      aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+      aggregate_limit_loc:occupancycode               = 0
+--      aggregate_limit_loc:number_of_stories           = cppgeneral:stories
+    End
+}
+
+Procedure Change_FARM_aggregate_limit_loc
+
+{
+  change aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODe
+      aggregate_limit_loc:CONSTRUCTION_CODE           = 0
+      aggregate_limit_loc:CLASS_CODE                  = 0
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+      aggregate_limit_loc:SITE_LIMIT                  = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+      aggregate_limit_loc:BUILDING_VALUE              = cppfarm:coverage_a_limit
+      aggregate_limit_loc:BUILDING_LIMIT              = cppfarm:coverage_a_limit
+      aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppfarm:deductible
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+      aggregate_limit_loc:CONTENTS_VALUE              = cppfarm:coverage_c_limit
+      aggregate_limit_loc:CONTENTS_LIMIT              = cppfarm:coverage_c_limit
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE         = cppfarm:deductible
+      aggregate_limit_loc:ALE_BI_VALUE                = 0
+      aggregate_limit_loc:ALE_BI_LIMIT                = 0
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM            = SFPMASTER:TOTAL[5]
+      aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+      do get_prsmaster
+      if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+       {
+        aggregate_limit_loc:lob_subline     = l_lob_subline
+       }
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                    = sfpname:agent_no
+      aggregate_limit_loc:county                      = cppfarm:county
+      aggregate_limit_loc:square_footage              = 0
+      aggregate_limit_loc:eff_date                    = sfpname:eff_date
+      aggregate_limit_loc:tier                        = 0
+      aggregate_limit_loc:hurricane_deductible        = 0
+      aggregate_limit_loc:exclude_wind                = ""
+      aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+      aggregate_limit_loc:occupancycode               = 0
+
+    End
+}
+
+Procedure Change_SMP_aggregate_limit_loc
+
+{
+  do get_optional_coverages
+  do get_endorsment_premium
+  do get_miscellaneous
+  do compute_business_income
+  do calculate_prop_premium
+
+--  do access_cpstransitional
+
+  access cppexclusions,
+     set cppexclusions:policy_no    = cppgeneral:policy_no,
+         cppexclusions:pol_year     = cppgeneral:pol_year,
+         cppexclusions:end_sequence = cppgeneral:end_sequence,
+         cppexclusions:prem_no      = cppgeneral:prem_no,
+         cppexclusions:build_no     = cppgeneral:build_no,
+         cppexclusions:rate_type    = cppgeneral:rate_type, exact
+
+  if cppgeneral:blanket = 1 Then
+    {
+      change aggregate_limit_loc
+        Begin
+          aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+          aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+          aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+          aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+          aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+          aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+          aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+          aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+          aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+          aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+          aggregate_limit_loc:CONSTRUCTION_CODE           = cppgeneral:CONSTRUCTION
+          aggregate_limit_loc:CLASS_CODE                  = cppgeneral:class_code
+          aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+          aggregate_limit_loc:SITE_LIMIT                  = 0
+          aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+          aggregate_limit_loc:BUILDING_VALUE              = cppblanket:LIMIT[1]
+          aggregate_limit_loc:BUILDING_LIMIT              = cppblanket:LIMIT[1]
+          aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppgeneral:deductible
+          aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+          aggregate_limit_loc:CONTENTS_VALUE              = cppblanket:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_LIMIT              = cppblanket:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_DEDUCTABLE         = cppgeneral:contents_deductible
+          aggregate_limit_loc:ALE_BI_VALUE                = 0
+          aggregate_limit_loc:ALE_BI_LIMIT                = l_cpp_business_income_limit
+          aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+          aggregate_limit_loc:PROPERTY_PREMIUM            = l_property_premium
+          aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+          aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+          aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+          aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+          do get_prsmaster
+          if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+           {
+            aggregate_limit_loc:lob_subline     = l_lob_subline
+           }
+          aggregate_limit_loc:policy_type[5]  = l_policy_type5
+          aggregate_limit_loc:policy_type[6]  = l_policy_type6
+          aggregate_limit_loc:terrorism       = l_terr
+
+          aggregate_limit_loc:lob_subline                 = prsmaster:lob_subline
+          aggregate_limit_loc:agent_no                    = sfpname:agent_no
+          aggregate_limit_loc:county                      = cppgeneral:county
+          aggregate_limit_loc:square_footage              = 0
+          aggregate_limit_loc:eff_date                    = sfpname:eff_date
+          aggregate_limit_loc:tier                        = 0
+
+          if cppexclusions:exclude_wind_hail one of 1 then
+            {
+              aggregate_limit_loc:exclude_wind            = "X"
+            }
+          else
+           if cppgeneral:policy_no = 0 then
+            {
+              aggregate_limit_loc:exclude_wind            = "X"
+            }
+           else
+            {
+              aggregate_limit_loc:exclude_wind            = ""
+              aggregate_limit_loc:policy_type[2]          = 02
+              if cppgeneral:wind_deductible > 0 then
+                aggregate_limit_loc:hurricane_deductible  = cppgeneral:wind_deductible
+              else
+                aggregate_limit_loc:hurricane_deductible  = cppgeneral:deductible
+
+            }
+
+          aggregate_limit_loc:no_of_stories               = cppgeneral:stories
+          aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+          aggregate_limit_loc:blanket                     = cppgeneral:blanket
+          aggregate_limit_loc:CLASS_CODE_DESCRIPTION      = cppgeneral:description
+          switch(cppgeneral:class_code)
+            case 2,30,31      : aggregate_limit_loc:occupancycode              = 2
+            case 80,22        : aggregate_limit_loc:occupancycode              = 47
+            case 64           : aggregate_limit_loc:occupancycode              = 6
+            case 51,70        : aggregate_limit_loc:occupancycode              = 8
+            case 41,54,58,62,53  : aggregate_limit_loc:occupancycode           = 5
+            case 2980,2981,5980,1980,4981,2985,4982,166 : aggregate_limit_loc:occupancycode   = 18
+            case 10           : aggregate_limit_loc:occupancycode              = 52
+            case 685          : aggregate_limit_loc:occupancycode              = 13
+            case 96           : aggregate_limit_loc:occupancycode              = 11
+            case 3,18         : aggregate_limit_loc:occupancycode              = 40
+            case 90           : aggregate_limit_loc:occupancycode              = 22
+            case 93           : aggregate_limit_loc:occupancycode              = 44
+            case 74,32,281    : aggregate_limit_loc:occupancycode              = 37
+            case 746,3980     : aggregate_limit_loc:occupancycode              = 23
+            case 119          : aggregate_limit_loc:occupancycode              = 38
+            case 167          : aggregate_limit_loc:occupancycode              = 5
+            case 87           : aggregate_limit_loc:occupancycode              = 5
+            case 106,310      : aggregate_limit_loc:occupancycode              = 39
+            case 56           : aggregate_limit_loc:occupancycode              = 5
+            case 75           : aggregate_limit_loc:occupancycode              = 52
+          end
+        End
+    }
+  else
+    {
+      change aggregate_limit_loc
+        Begin
+          aggregate_limit_loc:COMPANY_ID                  = L_COMPANY_ID
+          aggregate_limit_loc:POLICY_NO                   = SFPMASTER:POLICY_NO
+          aggregate_limit_loc:pol_year                    = sfpmaster:pol_year
+          aggregate_limit_loc:end_sequence                = sfpmaster:end_sequence
+          aggregate_limit_loc:PREM_NO                     = SFPLOCATION:PREM_NO
+          aggregate_limit_loc:BUILD_NO                    = SFPLOCATION:BUILD_NO
+          aggregate_limit_loc:ADDRESS                     = SFPLOCATION:ADDRESS
+          aggregate_limit_loc:CITY                        = SFPLOCATION:CITY
+          aggregate_limit_loc:STR_STATE                   = SFPLOCATION:STR_STATE
+          aggregate_limit_loc:ZIP_CODE                    = SFPLOCATION:STR_ZIPCODE
+          aggregate_limit_loc:CONSTRUCTION_CODE           = cppgeneral:CONSTRUCTION
+          aggregate_limit_loc:CLASS_CODE                  = cppgeneral:class_code
+          aggregate_limit_loc:YEAR_OF_CONSTRUCTION        = sfplocation:YEAR_CONSTRUCTION
+          aggregate_limit_loc:SITE_LIMIT                  = 0
+          aggregate_limit_loc:SITE_DEDUCTABLE             = 0
+          aggregate_limit_loc:BUILDING_VALUE              = cppgeneral:LIMIT[1]
+          aggregate_limit_loc:BUILDING_LIMIT              = cppgeneral:LIMIT[1]
+          aggregate_limit_loc:BUILDING_DEDUCTABLE         = cppgeneral:deductible
+          aggregate_limit_loc:OTHER_STRUCTURES_VALUE      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_LIMIT      = 0
+          aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE = 0
+          aggregate_limit_loc:CONTENTS_VALUE              = cppgeneral:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_LIMIT              = cppgeneral:LIMIT[2]
+          aggregate_limit_loc:CONTENTS_DEDUCTABLE         = cppgeneral:contents_deductible
+          aggregate_limit_loc:ALE_BI_VALUE                = 0
+          aggregate_limit_loc:ALE_BI_LIMIT                = l_cpp_business_income_limit
+          aggregate_limit_loc:ALE_BI_DEDUCTIBLE           = 0
+          aggregate_limit_loc:PROPERTY_PREMIUM            = l_property_premium
+          aggregate_limit_loc:TRANS_DATE                  = SFPMASTER:TRANS_DATE
+          aggregate_limit_loc:TRANS_EFF                   = SFPMASTER:TRANS_EFF
+          aggregate_limit_loc:TRANS_CODE                  = SFPMASTER:TRANS_CODE
+          aggregate_limit_loc:line_of_business            = sfpname:line_of_business
+
+          do get_prsmaster
+          if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+           {
+            aggregate_limit_loc:lob_subline     = l_lob_subline
+           }
+          aggregate_limit_loc:policy_type[5]  = l_policy_type5
+          aggregate_limit_loc:policy_type[6]  = l_policy_type6
+          aggregate_limit_loc:terrorism       = l_terr
+
+          aggregate_limit_loc:lob_subline                 = prsmaster:lob_subline
+          aggregate_limit_loc:agent_no                    = sfpname:agent_no
+          aggregate_limit_loc:county                      = cppgeneral:county
+          aggregate_limit_loc:square_footage              = 0
+          aggregate_limit_loc:eff_date                    = sfpname:eff_date
+          aggregate_limit_loc:tier                        = 0
+
+          if cppexclusions:exclude_wind_hail one of 1 then
+            {
+              aggregate_limit_loc:exclude_wind            = "X"
+            }
+          else
+           if cppgeneral:policy_no = 0 then
+            {
+              aggregate_limit_loc:exclude_wind            = "X"
+            }
+           else
+            {
+              aggregate_limit_loc:exclude_wind            = ""
+              aggregate_limit_loc:policy_type[2]          = 02
+              if cppgeneral:wind_deductible > 0 then
+                aggregate_limit_loc:hurricane_deductible  = cppgeneral:wind_deductible
+              else
+                aggregate_limit_loc:hurricane_deductible  = cppgeneral:deductible
+
+            }
+
+          aggregate_limit_loc:no_of_stories               = cppgeneral:stories
+          aggregate_limit_loc:distance_to_shore           = sfplocation:distance_to_shore
+          aggregate_limit_loc:blanket                     = cppgeneral:blanket
+          aggregate_limit_loc:CLASS_CODE_DESCRIPTION      = cppgeneral:description
+          switch(cppgeneral:class_code)
+            case 2,30,31      : aggregate_limit_loc:occupancycode              = 2
+            case 80,22        : aggregate_limit_loc:occupancycode              = 47
+            case 64           : aggregate_limit_loc:occupancycode              = 6
+            case 51,70        : aggregate_limit_loc:occupancycode              = 8
+            case 41,54,58,62,53  : aggregate_limit_loc:occupancycode           = 5
+            case 2980,2981,5980,1980,4981,2985,4982,166 : aggregate_limit_loc:occupancycode   = 18
+            case 10           : aggregate_limit_loc:occupancycode              = 52
+            case 685          : aggregate_limit_loc:occupancycode              = 13
+            case 96           : aggregate_limit_loc:occupancycode              = 11
+            case 3,18         : aggregate_limit_loc:occupancycode              = 40
+            case 90           : aggregate_limit_loc:occupancycode              = 22
+            case 93           : aggregate_limit_loc:occupancycode              = 44
+            case 74,32,281    : aggregate_limit_loc:occupancycode              = 37
+            case 746,3980     : aggregate_limit_loc:occupancycode              = 23
+            case 119          : aggregate_limit_loc:occupancycode              = 38
+            case 167          : aggregate_limit_loc:occupancycode              = 5
+            case 87           : aggregate_limit_loc:occupancycode              = 5
+            case 106,310      : aggregate_limit_loc:occupancycode              = 39
+            case 56           : aggregate_limit_loc:occupancycode              = 5
+            case 75           : aggregate_limit_loc:occupancycode              = 52
+          end
+        End
+    }
+}
+
+Procedure CHANGE_aggregate_limit_loc     --bop
+
+{
+  If BOPGENERAL:LOSS_INCOME_LIMIT = 0 Then
+    {
+      L_BUSINESS_INCOME = SFPLOCATION:BUSINESS_INCOME
+    }
+  Else
+    {
+      L_BUSINESS_INCOME = BOPGENERAL:LOSS_INCOME_LIMIT
+    }
+
+  do access_bpsclass
+  Change aggregate_limit_loc
+    Begin
+      aggregate_limit_loc:COMPANY_ID                     = L_COMPANY_ID
+      aggregate_limit_loc:POLICY_NO                      = SFPMASTER:POLICY_NO
+      aggregate_limit_loc:pol_year                       = sfpmaster:pol_year
+      aggregate_limit_loc:end_sequence                   = sfpmaster:end_sequence
+      aggregate_limit_loc:PREM_NO                        = SFPLOCATION:PREM_NO
+      aggregate_limit_loc:BUILD_NO                       = SFPLOCATION:BUILD_NO
+      aggregate_limit_loc:ADDRESS                        = SFPLOCATION:ADDRESS
+      aggregate_limit_loc:CITY                           = SFPLOCATION:CITY
+      aggregate_limit_loc:STR_STATE                      = SFPLOCATION:STR_STATE
+      aggregate_limit_loc:ZIP_CODE                       = SFPLOCATION:STR_ZIPCODE
+      aggregate_limit_loc:CONSTRUCTION_CODE              = BOPGENERAL:CONSTRUCTION
+      aggregate_limit_loc:CLASS_CODE                     = BOPGENERAL:CLASS_CODE
+      aggregate_limit_loc:YEAR_OF_CONSTRUCTION           = BOPGENERAL:CONSTRUCTION_YEAR
+      aggregate_limit_loc:SITE_LIMIT                     = 0
+      aggregate_limit_loc:SITE_DEDUCTABLE                = 0
+      aggregate_limit_loc:BUILDING_VALUE                 = BOPGENERAL:BUILDING_LIMIT
+      aggregate_limit_loc:BUILDING_LIMIT                 = BOPGENERAL:BUILDING_LIMIT
+      aggregate_limit_loc:BUILDING_DEDUCTABLE            = SFPMASTER:DEDUCTIBLE
+      aggregate_limit_loc:OTHER_STRUCTURES_VALUE         = BOPGENERAL:OTHER_STRUCTURES
+      aggregate_limit_loc:OTHER_STRUCTURES_LIMIT         = BOPGENERAL:OTHER_STRUCTURES
+      aggregate_limit_loc:OTHER_STRUCTURES_DEDUCTIBLE    = 0
+      aggregate_limit_loc:CONTENTS_VALUE                 = BOPGENERAL:PROPERTY_LIMIT
+      aggregate_limit_loc:CONTENTS_DEDUCTABLE            = 0
+      aggregate_limit_loc:ALE_BI_VALUE                   = L_BUSINESS_INCOME
+      aggregate_limit_loc:ALE_BI_LIMIT                   = L_BUSINESS_INCOME
+      aggregate_limit_loc:ALE_BI_DEDUCTIBLE              = 0
+      aggregate_limit_loc:PROPERTY_PREMIUM               = (((BOPGENERAL:LOCATION_PREMIUM - bopgeneral:boilers_premium) *
+                                                             ((sfpmaster:irpm divide 100) + 1)) + bopgeneral:boilers_premium) * (prsreinsplit:property)
+      aggregate_limit_loc:TRANS_DATE                     = SFPMASTER:TRANS_DATE
+      aggregate_limit_loc:TRANS_EFF                      = SFPMASTER:TRANS_EFF
+      aggregate_limit_loc:TRANS_CODE                     = SFPMASTER:TRANS_CODE
+      aggregate_limit_loc:line_of_business               = sfpname:line_of_business
+
+      do get_prsmaster
+      if aggregate_limit_loc:lob_subline not one of "10","20","30","45" then
+       {
+        aggregate_limit_loc:lob_subline     = l_lob_subline
+       }
+      aggregate_limit_loc:policy_type[5]  = l_policy_type5
+      aggregate_limit_loc:policy_type[6]  = l_policy_type6
+      aggregate_limit_loc:terrorism       = l_terr
+
+      aggregate_limit_loc:agent_no                       = sfpname:agent_no
+      aggregate_limit_loc:county                         = bopgeneral:county
+      aggregate_limit_loc:LOSS_INCOME_LIMIT              = bopgeneral:loss_income_limit
+      aggregate_limit_loc:MONEY_LIMIT_ON                 = bopgeneral:money_limit_on
+      aggregate_limit_loc:AR_LIMIT                       = bopgeneral:ar_limit
+      aggregate_limit_loc:BUILDING_GLASS                 = bopgeneral:glass_limit
+      aggregate_limit_loc:CUSTOMER_PROP_LIMIT            = bopgeneral:customer_prop_limit[1]
+      aggregate_limit_loc:UTILITY_LIMIT                  = bopgeneral:UTILITY_LIMIT
+      aggregate_limit_loc:MECHANICAL_LIMIT               = bopgeneral:MECHANICAL_LIMIT
+      aggregate_limit_loc:PERSONAL_EFFECTS               = bopgeneral:property_limit
+      aggregate_limit_loc:DEBRIS_REMOVAL                 = bpsdefault:debris_removal
+      aggregate_limit_loc:FIRE_DEPARTMENT_SERVICE_CHARGE = bpsdefault:fire_department
+      aggregate_limit_loc:FIRE_EXTINGUISHER              = bpsdefault:fire_extinguisher
+      aggregate_limit_loc:POLLUTION_LIMIT                = bopgeneral:pollution_limit
+      aggregate_limit_loc:TREES_SHRUBS                   = bpsdefault:trees_shrubs[1]
+      aggregate_limit_loc:VALUEABLE_PAPERS_LIMIT         = bopgeneral:valuable_papers_limit
+      aggregate_limit_loc:WATER_DAMAGE_LIMIT             = bopgeneral:water_backup_limit
+      aggregate_limit_loc:PEAK_SEASON                    = l_peak_season         --bu0281 peak season
+      aggregate_limit_loc:EMPLOYEE_DISHONESTY            = l_employee_dishoesty  --bu0282
+      aggregate_limit_loc:LOSS_ASSESSMENT_COVERAGE       = l_loss_accessment     --bu0283 loss assessment
+      aggregate_limit_loc:COMPUTER_COVERAGE              = l_comp_desc_limit     --bu0370
+      aggregate_limit_loc:INDOOR_GLASS                   = l_glass_limit         --bu0375
+      aggregate_limit_loc:GARAGEKEEPERS_COVERAGE         = l_garagekeepers       --bu1510
+      aggregate_limit_loc:square_footage                 = 0
+      aggregate_limit_loc:eff_date                       = sfpname:eff_date
+      if bopgeneral:windstorm_exclusion one of 1 then
+        {
+          aggregate_limit_loc:exclude_wind                = "X"
+        }
+      else
+        {
+          aggregate_limit_loc:exclude_wind                = ""
+          aggregate_limit_loc:policy_type[2]              = 02
+          if bopgeneral:wind_deductible > 0 then
+            aggregate_limit_loc:hurricane_deductible      = bopgeneral:wind_deductible
+          else
+            aggregate_limit_loc:hurricane_deductible      = sfpmaster:deductible
+        }
+      aggregate_limit_loc:distance_to_shore               = sfplocation:distance_to_shore
+      aggregate_limit_loc:no_of_stories                   = bopgeneral:stories
+      aggregate_limit_loc:CLASS_CODE_DESCRIPTION          = bpsclass:DESCRIPTION[1]
+      switch(bopgeneral:class_code)   --add per cindy RMS program  09/27/2013
+        case 2,30         : aggregate_limit_loc:occupancycode              = 2
+        case 80,22        : aggregate_limit_loc:occupancycode              = 47
+        case 64,167,26    : aggregate_limit_loc:occupancycode              = 6
+        case 51,70        : aggregate_limit_loc:occupancycode              = 8
+        case 41,54,58,62,25,37,5,77,9,34,19     : aggregate_limit_loc:occupancycode   = 5
+        case 2980,2981,5980,1980,4981,2985,4982 : aggregate_limit_loc:occupancycode   = 18
+        case 10           : aggregate_limit_loc:occupancycode              = 52
+        case 685,119,71   : aggregate_limit_loc:occupancycode              = 13
+        case 31           : aggregate_limit_loc:occupancycode              = 43
+        case 3,18,75      : aggregate_limit_loc:occupancycode              = 40
+        case 90           : aggregate_limit_loc:occupancycode              = 22
+        case 93           : aggregate_limit_loc:occupancycode              = 44
+        case 74           : aggregate_limit_loc:occupancycode              = 37
+        case 87,746,3980  : aggregate_limit_loc:occupancycode              = 23
+        case 106,310      : aggregate_limit_loc:occupancycode              = 39
+        default           : aggregate_limit_loc:occupancycode              = 0
+      end
+    End
+}
+
+procedure get_prsmaster
+begin
+
+l_lob_subline = ""
+l_policy_type5 = 0
+l_policy_type6 = 0
+l_terr         = "N"
+
+access prsmaster, set prsmaster:company_id = l_company_id,
+                      prsmaster:policy_no = sfpmaster:policy_no, generic
+
+while prsmaster:company_id = l_company_id and
+      prsmaster:policy_no  = sfpmaster:policy_no
+       begin
+        if sfpname:eff_date = prsmaster:eff_date and
+           sfpname:exp_date = prsmaster:exp_date then
+            {
+              l_lob_subline     = prsmaster:lob_subline
+
+              if sfpname:line_of_business one of 6 and
+                 prsmaster:lob_subline one of "85" then
+                  {
+                   l_policy_type5 = 05
+                  }
+
+              if prsmaster:lob_subline one of "10","20","30" or
+                 sfpname:line_of_business one of 5,50,51 then
+                  {
+                   l_policy_type5  = 05
+                  }
+
+              if  prsmaster:lob_subline = "45" then
+               {
+                if prsmaster:line_of_business not one of 1,2,3,7,9,15,16,24 then
+                 {
+                   l_policy_type6  = 06
+                   l_terr          = "Y"
+                   if prsmaster:line_of_business one of 8 and
+                      cppgeneral:policy_no = 0 then
+                     {
+                      l_policy_type6  = 00
+                      l_terr          = "N"
+                     }
+                 }
+               }
+
+            }
+       next prsmaster
+       end
+
+end
+
+End -- end of program (batch)

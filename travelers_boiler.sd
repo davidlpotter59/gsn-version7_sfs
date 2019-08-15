@@ -1,0 +1,133 @@
+Cyberscreen System                                     Function [____________]
+Screen 2. TRAVELERS-BOILER Update Screen
+ 1. Policy Number:               _________            ______________
+ 2. Policy Year:                 ____     building value  _________
+ 3. Endorsement Sequence:             ____  contents value _________
+ 4. Location No:                      ____  deductilbe   ____
+ 5. Building No:                      ____  BI Limit: _______
+ 6. Sub Code:                         ____  PD Limit: _______
+ 7. Transaction Type:            ___        boiler machine net premium: __________
+ 8. Transaction Reason:          __
+ 9. Reinsureance Agreemenst Type: ______
+10. Current Policy No:           ____________________
+11. Prior Policy No:             ____________________
+12. Sic Code:                    ____
+13. Trans Eff Date:              __________
+14. Policy Eff Date:             __________
+15. Policy Exp Date:             __________
+16. Name Of Insured:-
+_______________________________________________________________________________
+17. location Address 1:-
+_______________________________________________________________________________
+location city: ____________________________________________
+state __ zip _____ phone ____________
+%%
+Screen
+        Name = "Travelers_Boiler" ;
+        Type = "Detail" ;
+        padcharacter = space;
+        Global Unsigned Ascii Number G_POLICY_NO[9] ;
+        Global Unsigned Ascii Number G_POL_YEAR[4] ;
+        Global Unsigned Ascii Number G_END_SEQUENCE[4] ;
+        Global Unsigned Ascii Number G_PREM_NO[4] ;
+        Global Unsigned Ascii Number G_BUILD_NO[4] ;
+        Global Unsigned Ascii Number G_SUB_CODE[4] ;
+
+        Access TRAVELERS_BOILER,
+           Set TRAVELERS_BOILER:POLICY_NO = G_POLICY_NO ,
+               TRAVELERS_BOILER:POL_YEAR = G_POL_YEAR ,
+               TRAVELERS_BOILER:END_SEQUENCE = G_END_SEQUENCE ,
+               TRAVELERS_BOILER:PREM_NO = G_PREM_NO ,
+               TRAVELERS_BOILER:BUILD_NO = G_BUILD_NO ,
+               TRAVELERS_BOILER:SUB_CODE = G_SUB_CODE ;
+
+        Include "STDKEYS.INC"
+
+Functions
+        Add/reuse   do add_the_record;
+        Change;         /* Change an existing record */
+        Delete;         /* Delete an existing record */
+
+        Find ;          /* Select a record using an exact key */
+        Search;         /* Select a record using an approximate key */
+        Next;           /* Display the next record(s) in key sequence */
+        Previous;       /* Display the previous record(s) in key sequence */
+        View;           /* View the contents of freetext fields */
+
+        Page/noreturn;  /* Display a different page - no going back */
+
+"Back"  Return;         /* Back to previous screen */
+"Exit"  Return;
+        Return;
+
+"Bye"   Stop;           /* Terminate this session */
+        Stop;
+
+        Print;          /* Print the screen on the default printer */
+"Cq"    Proc "CQ";      /* Enter Cyberquery */
+"Cli"   Proc ":CLI";    /* Push to the CLI */
+
+Fields
+        FUNCTION ;
+301     TRAVELERS_BOILER:POLICY_NO              Mandatory;
+302     travelers_boiler:boiler_machine_gross_premium;
+401     TRAVELERS_BOILER:POL_YEAR               Mandatory;
+402     TRAVELERS_BOILER:building_value_at_location;
+501     TRAVELERS_BOILER:END_SEQUENCE           Mandatory;
+502     TRAVELERS_BOILER:contents_value_at_location;
+601     TRAVELERS_BOILER:PREM_NO                Mandatory;
+602     TRAVELERS_BOILER:property_damage_deductible;
+701     TRAVELERS_BOILER:BUILD_NO               Mandatory;
+702     TRAVELERS_BOILER:business_interruption;
+801     TRAVELERS_BOILER:SUB_CODE               Mandatory;
+802     TRAVELERS_BOILER:property_damage_limit;
+0901     TRAVELERS_BOILER:TRANSACTION_TYPE;
+0902    TRAVELERS_BOILER:boiler_machine_net_premium;
+1001    TRAVELERS_BOILER:TRANSACTION_REASON;
+1101    TRAVELERS_BOILER:REINSUREANCE_AGREEMENT_TYPE;
+1201    TRAVELERS_BOILER:CURRENT_POLICY_NO;
+1301    TRAVELERS_BOILER:PRIOR_POLICY_NO;
+1401    TRAVELERS_BOILER:SIC_CODE;
+1501    TRAVELERS_BOILER:TRANS_EFF_DATE;
+1601    TRAVELERS_BOILER:POLICY_EFF_DATE;
+1701    TRAVELERS_BOILER:POLICY_EXP_DATE;
+1901    TRAVELERS_BOILER:NAME_OF_INSURED;
+2101    TRAVELERS_BOILER:location_address_1;
+2201    TRAVELERS_BOILER:location_city;
+2301    TRAVELERS_BOILER:location_state;
+2302    TRAVELERS_BOILER:location_zip;
+2303    TRAVELERS_BOILER:engineering_inspection_phone;
+
+
+
+
+procedure definition
+
+procedure add_the_record
+
+BEGIN
+  local file travelers_whole_rec = alias for travelers_boiler;
+
+  access travelers_whole_rec,
+     set travelers_whole_rec:POLICY_NO    = travelers_boiler:POLICY_NO,
+         travelers_whole_rec:POL_YEAR     = travelers_boiler:POL_YEAR,
+         travelers_whole_rec:END_SEQUENCE = travelers_boiler:END_SEQUENCE,
+         travelers_whole_rec:PREM_NO      = travelers_boiler:PREM_NO,
+         travelers_whole_rec:BUILD_NO     = travelers_boiler:BUILD_NO,
+         travelers_whole_rec:SUB_CODE     = travelers_boiler:SUB_CODE, exact
+
+  if travelers_whole_rec:POLICY_NO    <> travelers_boiler:POLICY_NO or
+     travelers_whole_rec:POL_YEAR     <> travelers_boiler:POL_YEAR or
+     travelers_whole_rec:END_SEQUENCE <> travelers_boiler:END_SEQUENCE or
+     travelers_whole_rec:PREM_NO      <> travelers_boiler:PREM_NO or
+     travelers_whole_rec:BUILD_NO     <> travelers_boiler:BUILD_NO or
+     travelers_whole_rec:SUB_CODE     <> travelers_boiler:SUB_CODE then
+    {
+      add travelers_whole_rec
+        begin
+          travelers_whole_rec:record = travelers_boiler:record
+        end
+    }
+end
+
+END

@@ -1,0 +1,1116 @@
+%%                       
+/*  sfsup122.sd
+
+    December 12, 2013
+
+    SCIPS.com
+
+    Interface update program for SCIPS to Send Travelers Boilerre Bordereau. EQUIPMENT BREAKDOWN
+*/
+
+Program
+        Name = "sfsup122" ;
+        Type = "File" ;
+        Domain = "dummy" ;
+        Padcharacter = Space ;
+
+        Number COUNTER = 0;
+
+        String L_COMPANY_ID[10]="",
+               L_STR_POLICY_NUMBER[20],
+               l_travelers_trans_code[3],
+               l_reinsurance_type[6],
+               l_filename[50]="";
+
+
+        Wdate l_trans_eff,
+              l_eff_date,
+              I_EFF_DATE,
+              G_STARTING_DATE,
+              l_exp_date,
+              G_ENDING_DATE;
+
+
+        Unsigned Ascii Number L_AGENT_NO[4]=0/decimals=0,
+                              l_line_of_business[4],
+                              l_save_line_of_business[4],
+                              l_policy_no[9],
+                              l_trans_code[2],
+                              l_total_records[7],
+                              l_pol_year[4],
+                              l_end_sequence[4],
+                              l_save_end_sequence[4],
+                              l_prem_no[4],
+                              l_build_no[4],
+                              l_property_limit[10],
+                              l_contents_limit[10],
+                              l_property_damage_limit[10],
+                              l_business_interruption[10],
+                              l_property_deductible[5],
+                              l_bpsclass_sub_code[4],
+                              l_sub_code[4],
+                              l_prior_end_sequence[4],
+                              l_prior_line_of_business[4],
+                              L_COMMERCIAL_UNDERWRITER[2]=0/decimals=0;
+
+        number function find_correct_end_sequence(number, number,number, date, date, date)
+        local file correct_location = alias for sfplocation;
+        Local file bopgeneral_prior = alias for bopgeneral;
+        local file cppproperty_prior = alias for cppproperty;
+        local file sfpmaster_file = alias for sfpmaster;
+        local file sfpmaster_file1 = alias for sfpmaster;
+
+
+        Signed Ascii Number l_total_gross[8]/dec=2,
+                            l_boiler_location_premium[16]/dec=2,
+                            l_short_rate[4]=0/dec=2,
+                            l_boiler_location_net_premium[16]/dec=2,
+                            l_equipment_breakdown_net_total[16]/dec=2;
+
+        String L_ENTER[1],
+               l_formatted_policy[20],
+               l_iso_sic_code[6],
+               l_lob_subline[2],
+               l_previous_policy_no[20],
+               l_alpha_prefix[5],
+               l_insured_name[55],
+               l_insured_city[20],
+               l_state[2],
+               l_zip_code1_5[5],
+               l_zip_code6_9[4],
+               l_location_address[200],
+               l_location_city[30],
+               l_location_state[2],
+               l_location_zip[5],
+               l_inspection_contact[20],
+               l_inspection_phone[12],
+               l_insured_address1[200],
+               l_tab_delimited_version[1],
+               l_prior_sfsline_code[10],
+               l_pay_plan[4];
+
+        Include "sfsrevname7.var"
+        include "prorata.var"
+
+
+Initialization
+
+Update
+  COUNTER = COUNTER + 1
+
+If COUNTER = 1 Then
+  Begin
+    Write ("<014>")
+    G_STARTING_DATE = Date(COMMANDLINE[1,8])
+    G_ENDING_DATE   = Date(COMMANDLINE[9,16])
+    l_tab_delimited_version = commandline[17,17]
+    access sfsdefault,
+       set sfsdefault:sfs_code = "SFS", exact
+
+    l_company_id = sfsdefault:company_id
+
+--    l_filename = "N3X" + str(year(g_starting_date)) + str(month(g_starting_date),"99") + ".xls"
+    deletefile (l_filename)
+    Write ("%c%s%d",09020,"Starting Date   = ",G_STARTING_DATE)
+    Write ("%c%s%d",10020,"ending Date     = ",G_ENDING_DATE)
+  End
+
+If COUNTER Mod 100 = 0 Then Begin
+  Write ("%c%s%n",02001,"Counter = ",COUNTER)
+End
+
+access sfscompany,
+   set sfscompany:company_id = sfsdefault:company_id, generic
+
+access prsmaster,
+   set prsmaster:company_id = sfsdefault:company_id, approximate
+
+while prsmaster:errornumber <> 4026
+  begin
+    l_company_id       = prsmaster:company_id
+    l_line_of_business = prsmaster:line_of_business
+    l_lob_subline      = prsmaster:lob_subline
+
+    Access SFSLINE,
+       Set SFSLINE:COMPANY_ID       = l_COMPANY_ID,
+           SFSLINE:LINE_OF_BUSINESS = l_LINE_OF_BUSINESS,
+           SFSLINE:LOB_SUBLINE      = L_lob_subline, exact
+
+    Access SFSLINE_alias,
+       Set SFSLINE_alias:COMPANY_ID       = l_COMPANY_ID,
+           SFSLINE_alias:LINE_OF_BUSINESS = l_LINE_OF_BUSINESS,
+           SFSLINE_alias:LOB_SUBLINE      = "00", exact
+
+    If ((prsmaster:trans_date < G_starting_date and
+         prsmaster:trans_eff => G_starting_date and
+         prsmaster:trans_eff <= G_ending_date) or
+
+      /* TRANSACTED WITHIN THE START DATE and THE END DATE WITH
+         EFFECTIVE DATES NOT > THE G_ending_date */
+
+        (prsmaster:trans_date => G_starting_date and
+         prsmaster:trans_date <= G_ending_date and
+         prsmaster:trans_eff <= G_ending_date)) and
+         prsmaster:trans_eff <> prsmaster:trans_exp and
+         prsmaster:premium <> 0 and
+         sfsline:stmt_lob <> 999 and
+         prsmaster:lob_subline one of "40" and
+         prsmaster:eff_date >= 11.20.2018 and
+         prsmaster:trans_date => 11.20.2018 and 
+         prsmaster:trans_code < 17 then
+       {
+         if l_policy_no    <> prsmaster:policy_no or
+            l_pol_year     <> prsmaster:pol_year or
+            l_end_sequence <> prsmaster:end_sequence then
+           {
+             if l_policy_no <> 0 and
+                l_trans_code one of 12,13,15,16 then   --make sure it skips this code until after the l_policy_no has a value
+               {
+/*
+                 if l_policy_no one of 500000490 then
+                   {
+                     Write ("%c<014>%s%x",1001,"l_policy_no       = ",l_policy_no)
+                     Write ("%c%s%x",2001,"l_pol_year             = ",l_pol_year)
+                     Write ("%c%s%x",3001,"l_end_sequence         = ",l_end_sequence)
+                     Write ("%c%s%x",3041,"l_prior_end_sequence   = ",l_prior_end_sequence)
+
+                     Write ("%c%s%x",5001,"prsmaster:policy_no    = ",prsmaster:policy_no)
+                     Write ("%c%s%x",6001,"prsmaster:pol_year     = ",prsmaster:pol_year)
+                     Write ("%c%s%x",7001,"prsmaster:end_sequence = ",prsmaster:end_sequence)
+                     Read (23,1,"Press Enter to Continue ",L_ENTER,1)
+                   }
+*/
+                 do check_for_deleted_boiler_location
+               }
+
+             if prsmaster:trans_code not one of 10,14 and
+                prsmaster:end_sequence = 0 then
+               {
+                 l_end_sequence = find_correct_end_sequence(prsmaster:policy_no,
+                                                            prsmaster:pol_year,
+                                                            prsmaster:trans_code,
+                                                            prsmaster:trans_eff,
+                                                            prsmaster:trans_exp,
+                                                            prsmaster:trans_date)
+               }
+             else
+               {
+                 l_end_sequence = prsmaster:end_sequence
+               }
+
+             l_policy_no              = prsmaster:policy_no
+             l_pol_year               = prsmaster:pol_year
+
+             access sfpmaster_file,
+                set sfpmaster_file:policy_no    = l_policy_no,
+                    sfpmaster_file:pol_year     = l_pol_year,
+                    sfpmaster_file:end_sequence = l_end_sequence, exact
+
+             l_save_end_sequence      = l_end_sequence
+             l_save_line_of_business  = l_line_of_business
+             l_trans_code             = prsmaster:trans_code
+             l_prior_sfsline_code     = SFSLINE_alias:LOB_CODE
+             l_prior_line_of_business = prsmaster:line_of_business
+             l_trans_eff              = prsmaster:trans_eff
+             l_eff_date               = prsmaster:eff_date
+             l_exp_date               = prsmaster:exp_date
+
+             if SFSLINE_alias:LOB_CODE One Of "SMP", "PROPERTY" then
+               {
+                 do find_boiler_smp_property_location(l_policy_no,l_pol_year, l_end_sequence)
+               }
+             else
+               if SFSLINE_alias:LOB_CODE One Of "BOP" then
+                 {
+                   do find_boiler_bop_location(l_policy_no,l_pol_year, l_end_sequence,0,0)
+                 }
+             l_total_records = l_total_records + 1
+           }
+       }
+    next prsmaster
+  end
+
+Screen Exit
+  Write ("%c%s%n",12001,"l_equipment_breakdown_total......",l_total_gross)
+  Write ("%c%s%n",14001,"l_equipment_breakdown_net......",l_total_gross)
+
+Procedure definition
+
+procedure access_boiler_deleted_location(number p_policy_no, number p_pol_year, number p_end_sequence,number p_prem_no, number p_build_no, number p_dont_check_prior)
+
+begin
+  wdate l_eff_date1;
+  l_business_interruption = 0
+  l_contents_limit = 0
+  l_property_limit = 0
+--  l_prem_no  = 0
+--  l_build_no = 0
+
+  Access bopgeneral,
+     Set bopgeneral:POLICY_NO    = p_POLICY_NO,
+         bopgeneral:POL_YEAR     = p_POL_YEAR,
+         bopgeneral:END_SEQUENCE = p_END_SEQUENCE,
+         bopgeneral:prem_no      = p_prem_no,
+         bopgeneral:build_no     = p_build_no, exact
+
+  if bopgeneral:POLICY_NO    = p_POLICY_NO and
+     bopgeneral:POL_YEAR     = p_POL_YEAR and
+     bopgeneral:END_SEQUENCE = p_END_SEQUENCE and
+     bopgeneral:prem_no      = p_prem_no and
+     bopgeneral:build_no     = p_build_no then
+    {
+      if bopgeneral:boilers_premium <> 0 then
+        {
+          l_business_interruption = l_business_interruption + bopGENERAL:LOSS_INCOME_limit
+          l_contents_limit = l_contents_limit + bopGENERAL:PROPERTY_LIMIT
+          l_property_limit = l_property_limit + bopGENERAL:OTHER_STRUCTURES + bopGENERAL:BUILDING_LIMIT
+
+--          l_boiler_location_premium = bopgeneral:boilers_premium
+
+          do access_sfplocation(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no)
+          Do UPDATE_travelersboiler_FILE(p_policy_no,p_pol_year,p_end_sequence)
+          Access BPSCLASS,
+             Set BPSCLASS:COMPANY_ID       = bopgeneral:company_id,
+                 BPSCLASS:STATE            = bopGENERAL:STATE,
+                 BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+                 BPSCLASS:class_code       = bopgeneral:class_code, generic
+
+          while bpsclass:COMPANY_ID       = bopGENERAL:COMPANY_ID and
+                BPSCLASS:STATE            = bopGENERAL:STATE and
+                BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS and
+                BPSCLASS:class_code       = bopgeneral:class_code
+            {
+              if bpsclass:eff_date <= l_eff_date then
+                {
+                  l_eff_date1         = bpsclass:eff_date
+                  l_bpsclass_sub_code = bpsclass:sub_code
+                }
+              next bpsclass
+            }
+           Access BPSCLASS,
+              Set BPSCLASS:COMPANY_ID       = bopGENERAL:COMPANY_ID,
+                  BPSCLASS:STATE            = bopGENERAL:STATE,
+                  BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+                  BPSCLASS:class_code       = bopgeneral:class_code,
+                  bpsclass:sub_code         = l_bpsclass_sub_code,
+                  bpsclass:eff_date         = l_eff_date1, exact
+          l_iso_sic_code   = bpsclass:sic
+          do add_travelers_bordereaux(p_policy_no,p_pol_year,p_end_sequence,p_prem_no,p_build_no,p_dont_check_prior,1)
+        }
+    }
+END
+
+
+procedure find_boiler_bop_location(number p_policy_no, number p_pol_year, number p_end_sequence,number p_dont_check_prior, number p_called_from_delete_routine)
+
+BEGIN
+  wdate l_eff_date1;
+  l_business_interruption = 0
+  l_contents_limit = 0
+  l_property_limit = 0
+  l_prem_no  = 0
+  l_build_no = 0
+
+  Access bopgeneral,
+     Set bopgeneral:POLICY_NO    = p_POLICY_NO,
+         bopgeneral:POL_YEAR     = p_POL_YEAR,
+         bopgeneral:END_SEQUENCE = p_END_SEQUENCE, generic
+
+  while bopgeneral:POLICY_NO    = p_POLICY_NO and
+        bopgeneral:POL_YEAR     = p_POL_YEAR and
+        bopgeneral:END_SEQUENCE = p_END_SEQUENCE
+    {
+      if bopgeneral:boilers_premium <> 0 then
+        {
+          l_prem_no  = bopgeneral:prem_no
+          l_build_no = bopgeneral:build_No
+          l_business_interruption = l_business_interruption + bopGENERAL:LOSS_INCOME_limit
+          l_contents_limit = l_contents_limit + bopGENERAL:PROPERTY_LIMIT
+          l_property_limit = l_property_limit + bopGENERAL:OTHER_STRUCTURES + bopGENERAL:BUILDING_LIMIT
+          if p_called_from_delete_routine one of 0 then
+            {
+              l_boiler_location_premium = bopgeneral:boilers_premium
+            }
+          do access_sfplocation(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no)
+          Do UPDATE_travelersboiler_FILE(p_policy_no,p_pol_year,p_end_sequence)
+          Access BPSCLASS,
+             Set BPSCLASS:COMPANY_ID       = bopgeneral:company_id,
+                 BPSCLASS:STATE            = bopGENERAL:STATE,
+                 BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+                 BPSCLASS:class_code       = bopgeneral:class_code, generic
+
+          while bpsclass:COMPANY_ID       = bopGENERAL:COMPANY_ID and
+                BPSCLASS:STATE            = bopGENERAL:STATE and
+                BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS and
+                BPSCLASS:class_code       = bopgeneral:class_code
+            {
+              if bpsclass:eff_date <= l_eff_date then
+                {
+                  l_eff_date1         = bpsclass:eff_date
+                  l_bpsclass_sub_code = bpsclass:sub_code
+                }
+              next bpsclass
+            }
+           Access BPSCLASS,
+              Set BPSCLASS:COMPANY_ID       = bopGENERAL:COMPANY_ID,
+                  BPSCLASS:STATE            = bopGENERAL:STATE,
+                  BPSCLASS:LINE_OF_BUSINESS = bopGENERAL:LINE_OF_BUSINESS,
+                  BPSCLASS:class_code       = bopgeneral:class_code,
+                  bpsclass:sub_code         = l_bpsclass_sub_code,
+                  bpsclass:eff_date         = l_eff_date1, exact
+          l_iso_sic_code   = bpsclass:sic
+          do add_travelers_bordereaux(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no,p_dont_check_prior,p_called_from_delete_routine)
+        }
+      next bopgeneral
+    }
+END
+
+procedure find_boiler_smp_property_location(number p_policy_no, number p_pol_year, number p_end_sequence)
+
+BEGIN
+  --I need to check to see if the premium that I am adding to the file is an endorsement and if so I need to check the prior end_sequence to see if it is the same value if it is do not add it else add the difference.
+  local file check_cppproperty_prior = alias for cppproperty;
+  local unsigned ascii number l_prior_boiler_location_premium[16]/dec=2;
+  local unsigned ascii number l_check_prior_end_sequence[4];
+
+  Access cppproperty,
+     Set cppproperty:POLICY_NO    = p_POLICY_NO,
+         cppproperty:POL_YEAR     = p_POL_YEAR,
+         cppproperty:END_SEQUENCE = p_END_SEQUENCE, generic
+
+  while cppproperty:policy_no    = p_policy_no and
+        cppproperty:pol_year     = p_pol_year and
+        cppproperty:end_sequence = p_end_sequence
+    {
+      if cppproperty:boiler = 1 then
+        {
+          l_boiler_location_premium = cppproperty:boiler_premium[1] + cppproperty:boiler_premium[2]
+          l_prem_no  = cppproperty:prem_no
+          l_build_no = cppproperty:build_No
+          do process_business_income(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no)
+          do access_sfplocation(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no)
+          Do UPDATE_travelersboiler_FILE(p_policy_no,p_pol_year,p_end_sequence)
+          do find_building_contents_value(p_policy_no,p_pol_year,p_end_sequence,l_prem_no,l_build_no,0,0)
+        }
+      next cppproperty
+    }
+END
+
+procedure access_cpstransitional(number p_state,
+                                 number p_group_no,
+                                 number p_sub_group,
+                                 number p_class_code,
+                                 number p_sub_code)
+BEGIN
+  local file sic_code_file = alias for cpstransitional;
+  local unsigned ascii number l_cpstransitional_line_of_business = 8;
+
+Access sic_code_file,
+   Set sic_code_file:COMPANY_ID       = l_COMPANY_ID,
+       sic_code_file:STATE            = p_STATE,
+       sic_code_file:LINE_OF_BUSINESS = l_cpstransitional_line_of_business,
+       sic_code_file:group_no         = p_group_no,
+       sic_code_file:sub_group        = p_sub_group,
+       sic_code_file:class_code       = p_class_code,
+       sic_code_file:sub_code         = p_sub_code, generic
+
+while sic_code_file:COMPANY_ID       = l_COMPANY_ID and
+      sic_code_file:STATE            = p_STATE and
+      sic_code_file:LINE_OF_BUSINESS = l_cpstransitional_line_of_business and
+      sic_code_file:group_no         = p_group_no and
+      sic_code_file:sub_group        = p_sub_group and
+      sic_code_file:class_code       = p_class_code and
+      sic_code_file:sub_code         = p_sub_code
+  begin
+    if (l_eff_date >= sic_code_file:eff_date and
+       (l_eff_date <= sic_code_file:exp_date or
+       sic_code_file:exp_date = 0)) then
+      begin
+        l_iso_sic_code = sic_code_file:sic
+     end
+    next sic_code_file
+  END
+END
+
+procedure find_building_contents_value(number p_policy_no,number p_pol_year,number p_end_sequence,number p_prem_no,number p_build_no, number p_dont_check_prior, number p_called_from_delete_routine)
+
+--the p_called_from_delete_routine this is so I can add one to the end_sequence on a deleted location.
+--the p_dont_check_prior = 1 do not want to check prior end_sequence.  I am doing that in this procedure just added it.
+
+BEGIN
+  l_contents_limit = 0
+  l_property_limit = 0
+  l_property_damage_limit = 0
+  Access cppgeneral,
+     Set cppgeneral:POLICY_NO    = p_POLICY_NO,
+         cppgeneral:POL_YEAR     = p_POL_YEAR,
+         cppgeneral:END_SEQUENCE = p_END_SEQUENCE,
+         cppgeneral:prem_no      = p_prem_no,
+         cppgeneral:build_no     = p_build_No, generic
+
+  while cppgeneral:POLICY_NO    = p_POLICY_NO and
+        cppgeneral:POL_YEAR     = p_POL_YEAR and
+        cppgeneral:END_SEQUENCE = p_END_SEQUENCE and
+        cppgeneral:prem_no      = p_prem_no and
+        cppgeneral:build_no     = p_build_No
+    {
+      l_contents_limit = cppgeneral:limit[2]
+      l_property_limit = cppgeneral:limit[1]
+      l_property_deductible = cppgeneral:deductible
+      do access_cpstransitional(cppgeneral:state,cppgeneral:group_no,cppgeneral:sub_group,cppgeneral:property_class_code,cppgeneral:sub_code)
+      l_property_damage_limit = l_property_limit + l_contents_limit
+      do add_travelers_bordereaux(p_policy_no, p_pol_year, p_end_sequence, p_prem_no, p_build_no, p_dont_check_prior, p_called_from_delete_routine)
+      next cppgeneral
+    }
+END
+
+procedure access_sfplocation(number p_policy_no,number p_pol_year,number p_end_sequence,number p_prem_no,number  p_build_no)
+
+begin
+  l_location_address = ""
+  l_location_city    = ""
+  l_location_state   = ""
+  l_location_zip     = ""
+  l_inspection_contact = ""
+  Write ("%c<014>%s%n",01001,"l_policy_no    = ",p_policy_no)
+  Write ("%c%s%n",02001,"l_pol_year     = ",p_pol_year)
+  Write ("%c%s%n",03001,"l_end_sequence = ",p_end_sequence)
+  Write ("%c%s%n",04001,"l_prem_no      = ",p_prem_no)
+  Write ("%c%s%n",05001,"l_build_no     = ",p_build_no)
+  Write ("%c%s%n",06001,"l_trans_code   = ",l_trans_code)
+
+  access correct_location,
+     set correct_location:POLICY_NO    = p_POLICY_NO,
+         correct_location:POL_YEAR     = p_POL_YEAR,
+         correct_location:END_SEQUENCE = p_END_SEQUENCE,
+         correct_location:prem_no      = p_prem_no,
+         correct_location:build_no     = p_build_no, generic
+
+  Write ("%c%s%n",07001,"correct_location:policy_no      = ",correct_location:policy_no)
+  Write ("%c%s%n",08001,"pol_year     = ",correct_location:pol_year)
+
+  l_location_address = trun(correct_location:address)
+  if trun(correct_location:address1[1]) <> "" then
+    {
+      l_location_address = l_location_address + " " +  trun(correct_location:address1[2])
+    }
+  if trun(correct_location:address1[3]) <> "" then
+    {
+      l_location_address = l_location_address + " " +  trun(correct_location:address1[3])
+    }
+  l_location_city      = correct_location:city
+  l_location_state     = correct_location:str_state
+  l_location_zip       = correct_location:str_zipcode
+--  Write ("%c%s%x",09001,"location_city     = ",l_location_city)
+--  Read (23,1,"Press Enter to Continue ",L_ENTER,1)
+  l_inspection_contact = correct_location:contact
+END
+
+procedure process_business_income(number p_policy_no,number p_pol_year,number p_end_sequence,number p_prem_no,number p_build_no)
+
+BEGIN
+  l_business_interruption = 0
+  Access cppbusiness,
+     Set cppbusiness:POLICY_NO    = p_POLICY_NO,
+         cppbusiness:POL_YEAR     = p_POL_YEAR,
+         cppbusiness:END_SEQUENCE = p_END_SEQUENCE,
+         cppbusiness:prem_no      = p_prem_no,
+         cppbusiness:build_no     = p_build_No, generic
+
+  while cppbusiness:POLICY_NO    = p_POLICY_NO and
+        cppbusiness:POL_YEAR     = p_POL_YEAR and
+        cppbusiness:END_SEQUENCE = p_END_SEQUENCE and
+        cppbusiness:prem_no      = p_prem_no and
+        cppbusiness:build_no     = p_build_No
+   {
+     l_business_interruption = l_business_interruption + cppbusiness:limit
+     next cppbusiness
+   }
+END
+
+Procedure UPDATE_travelersboiler_FILE(number p_policy_no, number p_pol_year, number p_end_sequence)
+
+Begin
+  local file sfpname_file = alias for sfpname;
+
+  access sfpmaster_file1,
+     set sfpmaster_file1:POLICY_NO    = p_POLICY_NO,
+         sfpmaster_file1:POL_YEAR     = p_POL_YEAR,
+         sfpmaster_file1:END_SEQUENCE = p_END_SEQUENCE, generic
+
+  access sfpname_file,
+     set sfpname_file:POLICY_NO    = p_POLICY_NO,
+         sfpname_file:POL_YEAR     = p_POL_YEAR,
+         sfpname_file:end_sequence = p_end_sequence, exact
+
+  l_inspection_phone  = str(sfpname_file:telephone,"999-999-9999")
+  l_pay_plan          = str(sfpname_file:payment_plan)
+
+  switch (l_trans_code)
+    case 10 : l_travelers_trans_code = "NEW"
+    case 11 : begin
+                if l_trans_eff = l_eff_date then
+                  {
+                    l_travelers_trans_code = "CFL"
+                  }
+                else
+                  if sfpmaster_file1:short_rate = "Y" then
+                    {
+                      l_travelers_trans_code = "CSR"
+                    }
+                  else
+                    {
+                      l_travelers_trans_code = "CPR"
+                    }
+              end
+    case 12 : l_travelers_trans_code = "END"
+    case 13 : l_travelers_trans_code = "END"
+    case 14 : l_travelers_trans_code = "REN"
+    case 15 : l_travelers_trans_code = "END"
+    case 16 : l_travelers_trans_code = "RET"
+  end
+
+  l_reinsurance_type = "Treaty"
+
+  L_STR_POLICY_NUMBER = Str(l_pOLICY_NO)
+
+  -- l_alpha_prefix = sfsline:alpha
+  l_alpha_prefix = "3710-"
+
+  if len(trun(str(l_policy_no))) <= 5 then
+    {
+      l_formatted_policy = trun(l_alpha_prefix) + str(l_policy_no,"99999")
+    }
+  else
+    {
+      l_formatted_policy = trun(l_alpha_prefix) + str(l_policy_no,"ZZZZZZZZZ")
+    }
+
+
+  if sfpname_file:policy_no    = p_policy_no and
+     sfpname_file:pol_year     = p_pol_year and
+     sfpname_file:end_sequence = p_end_sequence then
+    {
+      if sfpname_file:previous_policy_no <> 0 and l_trans_code one of 14 then
+        {
+          if len(trun(str(sfpname_file:previous_policy_no))) <= 5 then
+            {
+              l_previous_policy_no = trun(l_alpha_prefix) + str(sfpname_file:previous_policy_no,"99999")
+            }
+          else
+            {
+              l_previous_policy_no = trun(l_alpha_prefix) + str(sfpname_file:previous_policy_no,"ZZZZZZZZZ")
+            }
+        }
+      else
+        {
+          l_previous_policy_no = "                    "
+        }
+      I_name = sfpname_file:name[1]
+      include "sfsrevname7.pro"
+      l_insured_name    = I_REV_NAME
+      l_insured_address1 = trun(sfpname_file:address[1]) + " " + trun(sfpname_file:address[2]) + " " + trun(sfpname_file:address[3])
+      l_insured_city    = sfpname_file:city
+      l_state           = sfpname_file:str_state
+      l_zip_code1_5     = sfpname_file:str_zipcode[1,5]
+      l_zip_code6_9     = sfpname_file:str_zipcode[6,9]
+      l_agent_no        = sfpname_file:agent_no
+    }
+end -- end of procedure
+
+number function find_correct_end_sequence(number p_policy_no,number p_pol_year, number p_trans_code,date p_trans_eff,date p_trans_exp,date p_trans_date)
+
+begin
+  unsigned ascii number l_return_end_sequence[4] = 0;
+
+  access sfpmaster_file,
+     set sfpmaster_file:policy_no = p_policy_no,
+         sfpmaster_file:pol_year  = p_pol_year, generic
+
+  while sfpmaster_file:policy_no = p_policy_no and
+        sfpmaster_file:pol_year  = p_pol_year
+    {
+      if sfpmaster_file:premium_trans_date = p_trans_date and
+         sfpmaster_file:trans_code         = p_trans_code and
+         sfpmaster_file:trans_eff          = p_trans_eff and
+         sfpmaster_file:trans_exp          = p_trans_exp then
+        {
+          l_return_end_sequence = sfpmaster_file:end_sequence
+        }
+      next sfpmaster_file
+    }
+  return l_return_end_sequence
+END
+
+Procedure PRO_RATA
+Begin
+I_EFF_DATE = Dateadd(sfpmaster_file:TRANS_EXP,0,-1)
+I_SHORT_RATE = sfpmaster_file:SHORT_RATE
+I_TOTAL_DAYS = I_EFF_DATE - sfpmaster_file:TRANS_EXP
+I_CX_DAYS = I_EFF_DATE - sfpmaster_file:TRANS_EFF
+Include "prorata.pro"
+End
+
+procedure find_prior_boiler_end_sequence(number p_policy_no,number p_pol_year,number p_end_sequence,number p_prem_no,number p_build_no)
+
+Begin
+  if p_end_sequence > 0 then
+    {
+      l_prior_end_sequence = p_end_sequence - 1
+    }
+  if SFSLINE_alias:LOB_CODE One Of "SMP", "PROPERTY" then
+    {
+      Access cppproperty_prior,
+         Set cppproperty_prior:POLICY_NO    = p_POLICY_NO,
+             cppproperty_prior:POL_YEAR     = p_POL_YEAR,
+             cppproperty_prior:END_SEQUENCE = l_prior_END_SEQUENCE,
+             cppproperty_prior:prem_no      = p_prem_no,
+             cppproperty_prior:build_no     = p_build_No, generic
+
+      if cppproperty_prior:policy_no    = p_policy_no and
+         cppproperty_prior:pol_year     = p_pol_year and
+         cppproperty_prior:end_sequence = l_prior_end_sequence and
+         cppproperty_prior:prem_no      = p_prem_no and
+         cppproperty_prior:build_no     = p_build_No then
+        {
+          if cppproperty_prior:boiler = 1 then
+            {
+              if l_trans_code one of 11 then
+                {
+                  if l_travelers_trans_code one of "CPR" then
+                    {
+                      do pro_rata
+                      l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+                    }
+                  l_boiler_location_premium = l_boiler_location_premium * -1
+                }
+              else
+                if l_trans_code one of 16 then
+                  {
+                    if prsmaster:trans_eff <> prsmaster:eff_date then
+                      {
+                        do pro_rata
+                        l_boiler_location_premium = (cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]) * i_pro_rata
+                      }
+                  }
+                else
+                  if prsmaster:trans_eff <> prsmaster:eff_date then  --not a flat cancellation
+                    {
+                      l_boiler_location_premium = ((cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]) - l_boiler_location_premium) * -1
+                      do pro_rata
+                      l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+                    }
+                  else
+                    {
+                      l_boiler_location_premium = ((cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]) - l_boiler_location_premium) * -1
+                    }
+/*            if l_POLICY_NO one of 800000925 then
+              {
+                Write ("%c<014>%s%x",1001,"l_policy_no                = ",cppproperty_prior:policy_no)
+                Write ("%c%s%x",2001,"P_pol_year                      = ",cppproperty_prior:pol_year)
+                Write ("%c%s%x",3001,"l_end_sequence                  = ",cppproperty_prior:end_sequence)
+                Write ("%c%s%x",4001,"prem_no                         = ",cppproperty_prior:prem_no)
+                Write ("%c%s%x",5001,"build_no                        = ",cppproperty_prior:build_no)
+                Write ("%c%s%x",6001,"property premium                = ",cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2])
+
+                Write ("%c%s%x",1051,"prsmaster:policy_no             = ",p_policy_no)
+                Write ("%c%s%x",2051,"Prsmaster:_pol_year             = ",p_pol_year)
+                Write ("%c%s%x",3051,"l_save_end_sequence             = ",p_end_sequence)
+                Write ("%c%s%x",4051,"p_prem_no                       = ",p_prem_no)
+                Write ("%c%s%x",5051,"p_build_no                      = ",p_build_no)
+                Write ("%c%s%x",6051,"current_location                = ",l_boiler_location_premium)
+
+                Read (23,1,"idfasdfklasjdfklhere Enter to Continue ",L_ENTER,1)
+              }*/
+
+            }
+        }
+      else  --location was not found in prior  need to add it and check for prorate also
+        if prsmaster:trans_eff <> prsmaster:eff_date then  --not a flat cancellation
+          {
+            l_boiler_location_premium = ((cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]) - l_boiler_location_premium) * -1
+            do pro_rata
+            l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+          }
+        else
+          {
+            l_boiler_location_premium = ((cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]) - l_boiler_location_premium) * -1
+          }
+    }
+  else
+    if SFSLINE_alias:LOB_CODE One Of "BOP" then
+      {
+        access bopgeneral_prior,
+           set bopgeneral_prior:policy_no    = p_policy_no,
+               bopgeneral_prior:pol_year     = p_pol_year,
+               bopgeneral_prior:end_sequence = l_prior_end_sequence,
+               bopgeneral_prior:prem_no      = p_prem_no,
+               bopgeneral_prior:build_no     = p_build_No, generic
+
+        if bopgeneral_prior:policy_no    = p_policy_no and
+           bopgeneral_prior:pol_year     = p_pol_year and
+           bopgeneral_prior:end_sequence = l_prior_end_sequence and
+           bopgeneral_prior:prem_no      = p_prem_no and
+           bopgeneral_prior:build_no     = p_build_No then
+          {
+            if bopgeneral_prior:boilers_premium <> 0 then
+              {
+                if l_trans_code one of 11 then
+                  {
+                    if l_travelers_trans_code one of "CPR" then
+                      {
+                        do pro_rata
+                        l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+                      }
+                    l_boiler_location_premium = l_boiler_location_premium * -1
+                  }
+                else
+                  if l_trans_code one of 16 then
+                    {
+                      if prsmaster:trans_eff <> prsmaster:eff_date then  --not a flat cancellation
+                        {
+                          do pro_rata
+                          l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+                        }
+                    }
+                  else
+                    if prsmaster:trans_eff <> prsmaster:eff_date then  --not a flat cancellation
+                      {
+                        l_boiler_location_premium = (bopgeneral_prior:boilers_premium - l_boiler_location_premium) * -1
+                        do pro_rata
+                        l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+                      }
+                    else
+                      l_boiler_location_premium = (bopgeneral_prior:boilers_premium - l_boiler_location_premium) * -1
+              }
+          }
+        else
+          if prsmaster:trans_eff <> prsmaster:eff_date then  --not a flat cancellation
+            {
+              l_boiler_location_premium = (bopgeneral_prior:boilers_premium - l_boiler_location_premium) * -1
+              do pro_rata
+              l_boiler_location_premium = l_boiler_location_premium * i_pro_rata
+            }
+          else
+            {
+              l_boiler_location_premium = (bopgeneral_prior:boilers_premium - l_boiler_location_premium) * - 1
+            }
+      }
+End
+
+procedure check_for_deleted_boiler_location
+
+/*lookS at the policy_no the just was updated.
+  I will access one prior end_sequence.
+  this procedure will only be done on endorsemens
+  I will look though each location and compare each boiler premium that was just uploaded
+  there is not need to add any premium if the boiler premium do not match already completed.
+*/
+
+BEGIN
+  local file prior_sfsline = alias for sfsline;
+  Access prior_SFSLINE,
+     Set prior_SFSLINE:COMPANY_ID       = l_COMPANY_ID,
+         prior_SFSLINE:LINE_OF_BUSINESS = l_save_LINE_OF_BUSINESS,
+         prior_SFSLINE:LOB_SUBLINE      = "00", exact
+
+  if prior_sfsline:LOB_CODE One Of "SMP", "PROPERTY" then
+    {
+      do check_for_deleted_boiler_on_smp_property
+    }
+  else
+    {
+      do check_for_deleted_boiler_on_bop
+    }
+END
+
+procedure check_for_deleted_boiler_on_smp_property
+
+BEGIN
+  local file cppproperty_current = alias for cppproperty;
+  unsigned ascii number l_current_end_sequence[4];
+
+  Access cppproperty_prior,
+     Set cppproperty_prior:POLICY_NO    = l_POLICY_NO,
+         cppproperty_prior:POL_YEAR     = l_POL_YEAR,
+         cppproperty_prior:END_SEQUENCE = l_prior_end_sequence, generic
+
+  while cppproperty_prior:POLICY_NO    = l_POLICY_NO and
+        cppproperty_prior:POL_YEAR     = l_POL_YEAR and
+        cppproperty_prior:END_SEQUENCE = l_prior_end_sequence
+    {
+      if cppproperty_prior:boiler = 1 then
+        {
+          Access cppproperty_current,
+             Set cppproperty_current:POLICY_NO    = cppproperty_prior:policy_no,
+                 cppproperty_current:POL_YEAR     = cppproperty_prior:POL_YEAR,
+                 cppproperty_current:END_SEQUENCE = l_end_sequence,
+                 cppproperty_current:prem_no      = cppproperty_prior:prem_no,
+                 cppproperty_current:build_no     = cppproperty_prior:build_no, exact
+
+          if cppproperty_current:POLICY_NO    <> cppproperty_prior:policy_no or
+             cppproperty_current:POL_YEAR     <> cppproperty_prior:POL_YEAR or
+             cppproperty_current:END_SEQUENCE <> l_end_sequence or   --this end_sequence will be the end_sequence that was just added to the file
+             cppproperty_current:prem_no      <> cppproperty_prior:prem_no or
+             cppproperty_current:build_no     <> cppproperty_prior:build_no then   --mean that the current location does not have the prior location boiler coverage
+            {
+              l_boiler_location_premium = cppproperty_prior:boiler_premium[1] + cppproperty_prior:boiler_premium[2]      --no need to do prorata because the lcoation is gone so entire amount of the prior is taken off
+
+              if l_trans_eff <> l_eff_date then
+                {
+                  do pro_rata
+                  l_boiler_location_premium = l_boiler_location_premium * i_pro_rata * -1
+                }
+              else
+                {
+                  l_boiler_location_premium = l_boiler_location_premium * -1
+                }
+            if l_POLICY_NO one of 800002057 then
+              {
+                Write ("%c<014>%s%x",1001,"l_policy_no                = ",cppproperty_prior:policy_no)
+                Write ("%c%s%x",2001,"prsmaster:policy_no             = ",cppproperty_current:policy_no)
+                Write ("%c%s%x",3001,"P_pol_year                      = ",cppproperty_prior:pol_year)
+                Write ("%c%s%x",4001,"Prsmaster:_pol_year             = ",cppproperty_current:pol_year)
+                Write ("%c%s%x",5001,"l_end_sequence                  = ",cppproperty_prior:end_sequence)
+                Write ("%c%s%x",6001,"l_save_end_sequence             = ",cppproperty_current:end_sequence)
+
+                Write ("%c%s%x",13001,"P_boiler_premium              = ",l_boiler_location_premium)
+                Write ("%c%s%x",8001,"l_trans_code                   = ",l_trans_code)
+                Write ("%c%s%x",9001,"prsmaster:trans_code           = ",prsmaster:trans_code)
+                Read (23,1,"ffffhere Enter to Continue ",L_ENTER,1)
+              }
+
+              do process_business_income(cppproperty_current:policy_no,
+                                         cppproperty_current:pol_year,
+                                         cppproperty_current:end_sequence,
+                                         cppproperty_current:prem_no,
+                                         cppproperty_current:build_no)
+
+              do access_sfplocation(cppproperty_prior:policy_no,cppproperty_prior:pol_year,cppproperty_prior:end_sequence,cppproperty_prior:prem_no,cppproperty_prior:build_no)
+              Do UPDATE_travelersboiler_FILE(cppproperty_prior:policy_no,cppproperty_prior:pol_year,cppproperty_prior:end_sequence)
+              do find_building_contents_value(cppproperty_prior:policy_no,
+                                              cppproperty_prior:pol_year,
+                                              cppproperty_prior:end_sequence,
+                                              cppproperty_prior:prem_no,
+                                              cppproperty_prior:build_no,
+                                              1,
+                                              1) --called from deleted location I need to add one to the end_sequence when I call the add to travelers database.
+            }
+        }
+      next cppproperty_prior
+    }
+END
+
+procedure check_for_deleted_boiler_on_bop
+
+BEGIN
+  local file bopgeneral_current = alias for bopgeneral;
+
+  access bopgeneral_prior,
+     set bopgeneral_prior:policy_no    = l_policy_no,
+         bopgeneral_prior:pol_year     = l_pol_year,
+         bopgeneral_prior:end_sequence = l_prior_end_sequence, generic
+
+  while bopgeneral_prior:policy_no    = l_policy_no and
+        bopgeneral_prior:pol_year     = l_pol_year and
+        bopgeneral_prior:end_sequence = l_prior_end_sequence
+    {
+      if bopgeneral_prior:boilers_premium <> 0 then
+        {
+          access bopgeneral_current,
+             set bopgeneral_current:policy_no    = bopgeneral_prior:policy_no,
+                 bopgeneral_current:pol_year     = bopgeneral_prior:pol_year,
+                 bopgeneral_current:end_sequence = l_end_sequence,
+                 bopgeneral_current:prem_no      = bopgeneral_prior:prem_no,
+                 bopgeneral_current:build_no     = bopgeneral_prior:build_NO, exact
+
+          l_boiler_location_premium = bopgeneral_prior:boilers_premium * -1
+
+          if bopgeneral_current:policy_no    <> bopgeneral_prior:policy_no or
+             bopgeneral_current:pol_year     <> bopgeneral_prior:pol_year or
+             bopgeneral_current:end_sequence <> l_end_sequence or
+             bopgeneral_current:prem_no      <> bopgeneral_prior:prem_no or
+             bopgeneral_current:build_no     <> bopgeneral_prior:build_NO then
+            {
+           if l_policy_no one of 500000490 then
+            {
+              Write ("%c<014>%s%x",1001,"l_policy_no     = ",l_policy_no)
+              Write ("%c%s%x",2001,"l_pol_year           = ",l_pol_year)
+              Write ("%c%s%x",3001,"l_prior_end_sequence = ",l_prior_end_sequence)
+              Write ("%c%s%x",3051,"l_end_sequence       = ",l_end_sequence)
+              Write ("%c%s%x",1051,"bop pol              = ",bopgeneral_prior:policy_no)
+              Write ("%c%s%x",2051,"bop pol_year         = ",bopgeneral_prior:pol_year)
+              Write ("%c%s%x",3051,"bop end_sequence     = ",bopgeneral_prior:end_sequence)
+              Write ("%c%s%x",4051,"bop prem_no          = ",bopgeneral_prior:prem_no)
+              Write ("%c%s%x",5051,"bop build_no         = ",bopgeneral_prior:build_no)
+
+              Write ("%c%s%x",7001,"bop current policy_no   = ",bopgeneral_current:policy_no)
+              Write ("%c%s%x",8001,"bop current pol_year    = ",bopgeneral_current:pol_year)
+              Write ("%c%s%x",9001,"bop current end_seq     = ",bopgeneral_current:end_sequence)
+              Write ("%c%s%x",10001,"l_end_sequence         = ",l_end_sequence)
+
+              Write ("%c%s%x",11001,"l_boiler_premium        = ",l_boiler_location_premium)
+              Write ("%c%s%x",12001,"l_trans_eff             = ",l_trans_eff)
+              Write ("%c%s%x",13001,"l_eff_date              = ",l_eff_date)
+              Read (23,1,"Press Enter to Continue ",L_ENTER,1)
+            }
+              do access_boiler_deleted_location(bopgeneral_prior:policy_no,
+                                                bopgeneral_prior:pol_year,
+                                                bopgeneral_prior:end_sequence,
+                                                bopgeneral_prior:prem_no,
+                                                bopgeneral_prior:build_no,1)
+                                                                                                                               --1 is for the p_dont_check_prior do not want to check prior end_sequence
+                                                                                                                               -- I am doing that in this procedure just added it.
+            }                                                                                                                  --this is for called from a deleted location need to add one to the end_sequence.
+        }
+      next bopgeneral_prior
+    }
+END
+
+Procedure Add_travelers_bordereaux(number p_policy_no,
+                                   number p_pol_year,
+                                   number p_end_sequence,
+                                   number p_prem_no,
+                                   number p_build_no,
+                                   number p_dont_check_prior,
+                                   number p_called_from_delete_routine)
+
+/*
+dont check prior is so when I checking deleted location I can scips this because I already have the value I need to add into the system
+dont_check_prior will be not be zero for check deleted location
+*/
+
+BEGIN
+  local file cppproperty_check = alias for cppproperty;
+
+  Access travelers_boiler,
+     set travelers_boiler:policy_no    = p_policy_no,
+         travelers_boiler:pol_year     = p_pol_year,
+         travelers_boiler:end_sequence = p_end_sequence,
+         travelers_boiler:prem_no      = p_Prem_no,
+         travelers_boiler:build_no     = p_build_no, generic
+
+  Access cppproperty_check,
+     Set cppproperty_check:POLICY_NO    = p_POLICY_NO,
+         cppproperty_check:POL_YEAR     = p_POL_YEAR,
+         cppproperty_check:END_SEQUENCE = p_END_SEQUENCE,
+         cppproperty_check:prem_no      = p_prem_no,
+         cppproperty_check:build_no     = p_build_no, generic
+
+
+  if travelers_boiler:policy_no    = cppproperty_check:POLICY_NO and
+     travelers_boiler:pol_year     = cppproperty_check:POL_YEAR and
+     travelers_boiler:end_sequence = cppproperty_check:END_SEQUENCE and
+     travelers_boiler:prem_no      = cppproperty_check:prem_no and
+     travelers_boiler:build_no     = cppproperty_check:build_no and
+     l_line_of_business not one of 5,50,51 and
+     p_called_from_delete_routine = 0 then
+   {
+      --if p_policy_no one of 17204 and p_prem_no = 1 then
+      --  {
+      --    Write ("%c<014>%s%x",1001,"l_policy_no     = ",p_policy_no)
+      --    Write ("%c%s%x",2001,"l_pol_year           = ",p_pol_year)
+      --    Write ("%c%s%x",3001,"l_prior_end_sequence = ",p_end_sequence)
+      --    Write ("%c%s%x",4001,"p_prem_no            = ",p_prem_no)
+      --    Write ("%c%s%x",5001,"p_build-No           = ",p_build_no)
+      --    Read (23,1,"Press Enter to Continue ",L_ENTER,1)
+      --  }
+
+     l_boiler_location_premium = 0
+   }
+
+  do get_subcode(p_policy_no,p_pol_year,p_end_sequence,p_prem_no,p_build_NO)
+  if l_trans_code not one of 10,14 and
+     p_dont_check_prior one of 0  then
+    {
+
+/*      if p_policy_no one of 800000925 then
+        {
+          Write ("%c<014>%s%x",1001,"l_policy_no     = ",p_policy_no)
+          Write ("%c%s%x",2001,"l_pol_year           = ",p_pol_year)
+          Write ("%c%s%x",3001,"l_prior_end_sequence = ",p_end_sequence)
+          Write ("%c%s%x",4001,"p_prem_no            = ",p_prem_no)
+          Write ("%c%s%x",5001,"p_build-No           = ",p_build_no)
+          Read (23,1,"Press Enter to Continue ",L_ENTER,1)
+        }*/
+      do find_prior_boiler_end_sequence(p_policy_no,p_pol_year,p_end_sequence,p_prem_no,p_build_NO)
+    }
+  if l_boiler_location_premium <> 0 then
+    {
+      add travelers_boiler
+        begin
+          travelers_boiler:policy_no                      = p_policy_no
+          travelers_boiler:pol_year                       = p_pol_year
+          if p_called_from_delete_routine = 1 then
+            {
+              p_end_sequence = p_end_sequence + 1
+            }
+          travelers_boiler:end_sequence                   = p_end_sequence
+          travelers_boiler:prem_no                        = p_Prem_no
+          travelers_boiler:build_no                       = p_build_no
+          travelers_boiler:sub_code                       = l_sub_code
+          travelers_boiler:transaction_type               = l_travelers_trans_code
+          travelers_boiler:trans_code                     = l_trans_code
+          travelers_boiler:REINSUREANCE_AGREEMENT_TYPE    = l_reinsurance_type
+          travelers_boiler:current_policy_no              = l_formatted_policy
+          travelers_boiler:prior_policy_no                = l_previous_policy_no
+          travelers_boiler:sic_code                       = l_iso_sic_code
+          travelers_boiler:trans_eff_date                 = l_trans_eff
+          travelers_boiler:policy_eff_date                = l_eff_date
+          travelers_boiler:policy_exp_date                = l_exp_date
+          travelers_boiler:name_of_insured                = l_insured_name
+          travelers_boiler:mailing_address_1              = l_insured_address1
+          travelers_boiler:mailing_address_2              = ""  --only have 150 character to display so always blank
+          travelers_boiler:mailing_city                   = l_insured_city
+          travelers_boiler:mailing_state                  = l_state
+          travelers_boiler:mailing_zipcode                = l_zip_code1_5
+          travelers_boiler:location_no                    = trun(str(l_prem_no)) + trun(str(l_build_no))
+          travelers_boiler:location_address_1             = l_location_address
+          travelers_boiler:location_address_2             = ""  --only have 150 character to display so always blank
+          travelers_boiler:location_city                  = l_location_city
+          travelers_boiler:location_state                 = l_location_state
+          travelers_boiler:location_zip                   = l_location_zip
+          travelers_boiler:engineering_inspection         = "Y"
+          travelers_boiler:engineering_inspection_contact = l_inspection_contact
+          travelers_boiler:engineering_inspection_phone   = l_inspection_phone
+          travelers_boiler:modified_property_premium      = 0
+          travelers_boiler:boiler_machine_gross_premium   = round(l_boiler_location_premium)
+          travelers_boiler:boiler_machine_net_premium     = round(l_boiler_location_premium - (l_boiler_location_premium * 0.20))
+          travelers_boiler:building_value_at_location     = l_property_limit
+          travelers_boiler:contents_value_at_location     = l_contents_limit
+          travelers_boiler:business_interruption          = l_business_interruption
+          travelers_boiler:property_damage_deductible     = l_property_deductible
+          travelers_boiler:property_damage_limit          = l_property_damage_limit
+          travelers_boiler:remit_premium_for_boiler       = 0
+          travelers_boiler:pay_mode                       = 1   --per steve george email on 2/14/2014
+          travelers_boiler:line_of_business               = l_line_of_business
+          travelers_boiler:program_code                   = "N3X"
+          travelers_boiler:program_name                   = "GSNIC-G&G"
+        end
+    }
+END
+
+procedure get_subcode(number p_policy_no,number p_pol_year,number p_end_sequence,number p_prem_no,number p_build_no)
+
+BEGIN
+  l_sub_code = 0
+  Access travelers_boiler,
+     set travelers_boiler:policy_no    = p_policy_no,
+         travelers_boiler:pol_year     = p_pol_year,
+         travelers_boiler:end_sequence = p_end_sequence,
+         travelers_boiler:prem_no      = p_Prem_no,
+         travelers_boiler:build_no     = p_build_no, generic
+
+  while travelers_boiler:policy_no    = p_policy_no and
+        travelers_boiler:pol_year     = p_pol_year and
+        travelers_boiler:end_sequence = p_end_sequence and
+        travelers_boiler:prem_no      = p_Prem_no and
+        travelers_boiler:build_no     = p_build_no
+    {
+      l_sub_code = travelers_boiler:sub_code
+      next travelers_boiler
+    }
+  l_sub_code = l_sub_code + 1
+END
+
+end
